@@ -1,0 +1,4849 @@
+{
+ "source": "IntelliJ IDEA 2026.2.3 MCP Server: tools/list in direct mode (idea mcpServer --invocation-mode=direct --allowed-tools='*')",
+ "tools": [
+  {
+   "name": "air_set_session_title",
+   "description": "Set a short, descriptive title for this Air session. Changes session metadata only, never repository files. Cannot rename another session.",
+   "inputSchema": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "description": "A concise title, at most 160 characters"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "analyze_calls",
+   "description": "Builds the IDE Call Hierarchy tree for a method, function, constructor, or supported type target.\nUse it to see who calls a symbol (`INCOMING_CALLS`) or what the symbol calls (`OUTGOING_CALLS`).\nStrongly prefer this tool over usage search, text search, or regex search when evaluating dependencies by actual calls.\nIt uses IDE call hierarchy data, so it provides more precise call relationships with less noise and fewer follow-up calls than primitive searches.\n\nPass `symbolFqn` as a fully qualified name, for example `com.example.Service.run`.\nIf the name is ambiguous, the tool returns exact signatures; pass one of them back as `symbolFqn`.\nIf you only know a short name or fragment, use `search_symbol` first to find the target.\n\nThe result is an expandable text tree. Each node includes `filePath` and `treePath`; `filePath` is project-relative when possible.\nPass `treePath` back to render the subtree.\nUse `childOffset` to continue after a truncated `… and n more` line.\n`depth`, `maxChildren`, and `maxNodes` bound the rendered tree.\nSymbols can come from project sources, source jars, or decompiled binary jar dependencies when the IDE can resolve them.",
+   "inputSchema": {
+    "properties": {
+     "symbolFqn": {
+      "type": "string",
+      "description": "Plain fully qualified symbol name, or an exact signature returned by an ambiguity error or copied from a rendered child node. If you only know a short name or fragment, use `search_symbol` first and pass the best fully qualified callable name here. Examples: `com.example.Service.run`, `com.example.Service.run(String)`, or `org.assertj.core.api.Assertions.assertThat(String)`. Do not pass file path, line, column, or a separate target signature."
+     },
+     "analysisKind": {
+      "type": "string",
+      "enum": [
+       "INCOMING_CALLS",
+       "OUTGOING_CALLS"
+      ],
+      "description": "Call analysis direction. Use `INCOMING_CALLS` to show callers of `symbolFqn`, or `OUTGOING_CALLS` to show symbols called from `symbolFqn`."
+     },
+     "depth": {
+      "type": "integer",
+      "description": "Maximum number of call levels to render below the requested subtree root. Default: 5. Use 0 to render only the subtree root."
+     },
+     "maxChildren": {
+      "type": "integer",
+      "description": "Maximum number of direct children rendered for each node. Default: 50."
+     },
+     "maxNodes": {
+      "type": "integer",
+      "description": "Maximum total number of rendered call nodes. Default: 1000."
+     },
+     "treePath": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional path to a subtree root, copied exactly from a previous `analyze_calls` result. Null or omitted means the root path `[]`. Each component is an exact signature, not a display name."
+     },
+     "childOffset": {
+      "type": "integer",
+      "description": "Offset for paging direct children of the node addressed by `treePath`. Default: 0."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "symbolFqn",
+     "analysisKind"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "apply_patch",
+   "description": "        Apply a patch using the Codex apply_patch format or unified git diff format.\n        Supports Add, Delete, and Update operations with optional Move to path for updates.\n        Paths must stay inside the project directory.",
+   "inputSchema": {
+    "properties": {
+     "input": {
+      "type": "string",
+      "description": "Patch text in the apply_patch format or unified git diff format."
+     },
+     "patch": {
+      "type": "string",
+      "description": "Alias of `input` for compatibility with clients that send `{patch: ...}`."
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "build_project",
+   "description": "Triggers building of the project or specified files, waits for completion, and returns build errors.\nUse this tool to build the project or compile files and get detailed information about compilation errors and warnings.\nYou have to use this tool after performing edits to validate if the edits are valid.",
+   "inputSchema": {
+    "properties": {
+     "rebuild": {
+      "type": "boolean",
+      "description": "Whether to perform full rebuild the project. Defaults to false. Effective only when `filesToRebuild` is not specified."
+     },
+     "filesToRebuild": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "If specified, only compile files with the specified paths. Paths are relative to the project root."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "isSuccess": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Whether the build was successful"
+     },
+     "problems": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "message"
+       ],
+       "properties": {
+        "message": {
+         "type": "string"
+        },
+        "kind": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "group": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "description": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "file": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "line": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "column": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      },
+      "description": "A list of problems encountered during the build. May be empty if the build was successful."
+     },
+     "timedOut": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Indicates whether the operation was timed out. 'true' value may mean that the results may be incomplete or partial. 'false', 'null' or missing value means that the operation has not been timed out."
+     }
+    },
+    "required": [
+     "problems"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "cancel_sql_query",
+   "description": "Cancels a running query using its unique ID. ",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "integer",
+      "description": "The unique ID of a query session."
+     }
+    },
+    "required": [
+     "sessionId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "configure_python_interpreter",
+   "description": "    Configures a Python interpreter for the module containing the given file using PyCharm's own detection\n    (existing .venv folder, or a fresh uv/poetry/hatch venv when the corresponding tool is already installed).\n    Call this only after get_python_environment reported that no interpreter is configured.\n    This tool does NOT install env-management tools like uv or poetry; if PyCharm needs one, the call fails\n    with the missing tool name so the agent can install it manually first and retry.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Absolute or project-relative path to a Python file inside the module whose interpreter should be configured."
+     }
+    },
+    "required": [
+     "filePath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "pythonVersion": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Interpreter version string, e.g. 'Python 3.11.4'; null when no interpreter is configured"
+     },
+     "environmentType": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "'venv', 'conda', 'system', or 'unknown'; null when no interpreter is configured"
+     },
+     "executablePath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Absolute path to the Python binary to invoke; null when no interpreter is configured"
+     },
+     "environmentPath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Root of the virtual environment (venv prefix or conda prefix); null for system Python or unconfigured"
+     },
+     "packageManager": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "'pip', 'uv', 'poetry', 'hatch', 'conda', or 'unknown'; null when no interpreter is configured"
+     },
+     "noInterpreterConfigured": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "When non-null, no interpreter is configured for this module. Describes the current state and what action to take next."
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "create_database_connection",
+   "description": "Create a new database connection (data source) by name, DBMS (dbms), JDBC URL (url) and flag to check connection (needToCheckDs). All parameters are required.\nReturns connection diagnostic info.",
+   "inputSchema": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Unique name of the database connection."
+     },
+     "dbms": {
+      "type": "string",
+      "description": "Name of the database management system (DBMS)"
+     },
+     "url": {
+      "type": "string",
+      "description": "Fully-formed JDBC URL of the database connection (e.g. `jdbc:postgresql://<host>:<port>/<database>`)"
+     },
+     "needToCheckDs": {
+      "type": "boolean",
+      "description": "Whether to test the connection right after the data source is created/edited.\nSet to `false` when configuring multiple connections in a batch — the per-connection probe is expensive,\nand `test_database_connection` can be called explicitly for the connections that matter."
+     }
+    },
+    "required": [
+     "name",
+     "dbms",
+     "url",
+     "needToCheckDs"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "hasProblems": {
+      "type": "string",
+      "enum": [
+       "YES",
+       "NO",
+       "UNSURE"
+      ],
+      "description": "Shows if the connection is problematic (yes/no/unknown)."
+     },
+     "connectionInfo": {
+      "type": "string",
+      "description": "Detailed information about database connection such as DBMS type, version and JDBC driver."
+     },
+     "summary": {
+      "type": "string",
+      "description": "Summary of connection attempt result. In case of a failure, contains DBMS-provided error description."
+     }
+    },
+    "required": [
+     "hasProblems",
+     "connectionInfo",
+     "summary"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "create_ij_module",
+   "description": "Creates a new IntelliJ module using the same scaffolding logic as the New IntelliJ Module action,\nbut without showing any UI or progress indicators.\nFor non-empty kinds, this also updates the enclosing plugin.xml when a single target plugin can be resolved.\nAllowed values for kindTemplateName: `empty`, `frontend`, `backend`, `shared`.\nNote: parentDirectoryPath must point to an existing directory inside the project.",
+   "inputSchema": {
+    "properties": {
+     "parentDirectoryPath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "moduleName": {
+      "type": "string",
+      "description": "Module name to create. For non-empty kinds the same name normalization as in the UI action is applied."
+     },
+     "kindTemplateName": {
+      "type": "string",
+      "description": "Module kind template name. Allowed values: `empty`, `frontend`, `backend`, `shared`."
+     }
+    },
+    "required": [
+     "parentDirectoryPath",
+     "moduleName",
+     "kindTemplateName"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "moduleName": {
+      "type": "string",
+      "description": "Created module name after the same kind-based normalization used by the UI action."
+     },
+     "moduleRootPath": {
+      "type": "string",
+      "description": "Path to the created module root, relative to the project root when possible."
+     },
+     "kindTemplateName": {
+      "type": "string",
+      "description": "Normalized module kind template name."
+     },
+     "targetPluginXmlPath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Path to the plugin.xml selected for content-module registration, relative to the project root when available."
+     }
+    },
+    "required": [
+     "moduleName",
+     "moduleRootPath",
+     "kindTemplateName"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "create_new_file",
+   "description": "Creates a new file at the specified path within the project directory and optionally populates it with text if provided.\nUse this tool to generate new files in your project structure.\nNote: Creates any necessary parent directories automatically",
+   "inputSchema": {
+    "properties": {
+     "pathInProject": {
+      "type": "string",
+      "description": "Path where the file should be created relative to the project root"
+     },
+     "text": {
+      "type": "string",
+      "description": "Content to write into the new file"
+     },
+     "overwrite": {
+      "type": "boolean",
+      "description": "Whether to overwrite an existing file if exists. If false, an exception is thrown in case of a conflict."
+     }
+    },
+    "required": [
+     "pathInProject"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "edit_database_connection",
+   "description": "Edit an existing database connection (data source) identified by `connectionId`.\nUpdates the connection's DBMS driver and JDBC URL; the connection `name` is preserved.\nRequired parameters: connectionId, dbms, url, needToCheckDs\nReturns connection diagnostic info.\nDo not use this tool for DDL data sources as they have no underlying DBMS connection.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "dbms": {
+      "type": "string",
+      "description": "Name of the database management system (DBMS)"
+     },
+     "url": {
+      "type": "string",
+      "description": "Fully-formed JDBC URL of the database connection (e.g. `jdbc:postgresql://<host>:<port>/<database>`)"
+     },
+     "needToCheckDs": {
+      "type": "boolean",
+      "description": "Whether to test the connection right after the data source is created/edited.\nSet to `false` when configuring multiple connections in a batch — the per-connection probe is expensive,\nand `test_database_connection` can be called explicitly for the connections that matter."
+     }
+    },
+    "required": [
+     "connectionId",
+     "dbms",
+     "url",
+     "needToCheckDs"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "hasProblems": {
+      "type": "string",
+      "enum": [
+       "YES",
+       "NO",
+       "UNSURE"
+      ],
+      "description": "Shows if the connection is problematic (yes/no/unknown)."
+     },
+     "connectionInfo": {
+      "type": "string",
+      "description": "Detailed information about database connection such as DBMS type, version and JDBC driver."
+     },
+     "summary": {
+      "type": "string",
+      "description": "Summary of connection attempt result. In case of a failure, contains DBMS-provided error description."
+     }
+    },
+    "required": [
+     "hasProblems",
+     "connectionInfo",
+     "summary"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "execute_run_configuration",
+   "description": "Run either an existing run configuration by name or a temporary run configuration created from a code location (`filePath` + `line`) in the current project, then wait up to specified timeout for it to finish.\n\nUse this tool with either a configuration name returned by `get_run_configurations`, or with a run point\n(`filePath` + `line`) returned by `get_run_configurations(filePath = ...)`.\n\nOptional launch overrides (`programArguments`, `workingDirectory`, `envs`) are applied only for this run and are not persisted.\nDo not pass these override parameters unless you explicitly need to change the configured launch values for this run.\nMissing/null override parameters keep existing run configuration values unchanged.\nFor string overrides (`programArguments`, `workingDirectory`), missing/null or empty string (`\"\"`) keeps the existing value unchanged.\nPass a whitespace-only string such as `\" \"` to clear an existing value for this launch.\n\nPass either `configurationName`, or `filePath` together with `line`. These modes are mutually exclusive.\n\nBehavior:\n- When `waitForExit=true`, waits up to `timeout` milliseconds for process termination. If the timeout expires,\n  the process keeps running in the background and `exitCode` is omitted from the result.\n- When `waitForExit=false`, waits only for the process to start, then returns immediately without applying `timeout`.\n- `fullOutputPath` points to a temp file with the full raw output and may continue growing while the process is alive.\n\nReturns the execution result including current output snapshot, optional exit code, and optional `fullOutputPath`.",
+   "inputSchema": {
+    "properties": {
+     "configurationName": {
+      "type": "string",
+      "description": "Name of the existing run configuration to execute"
+     },
+     "filePath": {
+      "type": "string",
+      "description": "File path relative to the project root. Provide together with `line` to create and execute a temporary run configuration from code context."
+     },
+     "line": {
+      "type": "integer",
+      "description": "1-based line number for `filePath`. Provide together with `filePath` and do not combine with `configurationName`."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     },
+     "waitForExit": {
+      "type": "boolean",
+      "description": "Whether to wait for process termination. If false, the tool returns immediately after the process starts and ignores `timeout`."
+     },
+     "programArguments": {
+      "type": "string",
+      "description": "Optional program arguments override for this launch only. Missing/null or empty string keeps the existing value; whitespace-only string clears it."
+     },
+     "workingDirectory": {
+      "type": "string",
+      "description": "Optional working directory override for this launch only. Missing/null or empty string keeps the existing value; whitespace-only string clears it."
+     },
+     "envs": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "Optional environment variable overrides for this launch only. Missing/null keeps existing env unchanged; when provided, values are merged over existing env."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "exitCode": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Process exit code. Absent when the tool returns before observing process termination, for example when `waitForExit=false` or when `timeout` expires."
+     },
+     "timedOut": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Deprecated"
+     },
+     "output": {
+      "type": "string",
+      "description": "Captured process output snapshot. The snapshot includes up to the first 10000 characters of process output; when additional output exists, `<truncated>` is appended to the preview."
+     },
+     "fullOutputPath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Path to a temp file containing the full raw output. The file may continue growing while the process is still running and remains available while the IDE is running."
+     },
+     "sessionId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Session identifier for this run. Uses the session name by default; if duplicate live run sessions exist, format is `<sessionName>#<executionId>`."
+     }
+    },
+    "required": [
+     "output"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "execute_sql_query",
+   "description": "Executes a SQL query against the given database connection.\nDo not use this tool for DDL data sources as they have no underlying DBMS connection.\nReports execution status (success/error) with error details when applicable.\nReturns query results in CSV format, if any.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     },
+     "queryText": {
+      "type": "string",
+      "description": "SQL query to be executed."
+     }
+    },
+    "required": [
+     "connectionId",
+     "databaseName",
+     "schemaName",
+     "queryText"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "resultSetId": {
+      "type": "string",
+      "description": "ID of the cached query result set. Pass it to `fetch_query_result` to retrieve additional pages. Empty if the error happens before getting any result."
+     },
+     "text": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Rendered query result in CSV format, or a status message if the query returned no rows. Empty if the query failed."
+     },
+     "errorMessage": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Error description if the query failed at the database; empty otherwise. Treat any non-empty value here as a failure regardless of `text`."
+     }
+    },
+    "required": [
+     "resultSetId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "execute_terminal_command",
+   "description": "        Executes a specified shell command in the IDE's integrated terminal.\n        Use this tool to run terminal commands within the IDE environment.\n        Requires a command parameter containing the shell command to execute.\n        Important features and limitations:\n        - Checks if process is running before collecting output\n        - Limits output to 2000 lines (truncates excess)\n        - Times out after specified timeout with notification\n        - Requires user confirmation unless \"Brave Mode\" is enabled in settings\n        Returns possible responses:\n        - Terminal output (truncated if > 2000 lines)\n        - Output with interruption notice if timed out\n        - Error messages for various failure cases",
+   "inputSchema": {
+    "properties": {
+     "command": {
+      "type": "string",
+      "description": "Shell command to execute"
+     },
+     "executeInShell": {
+      "type": "boolean",
+      "description": "Whether to execute the command in a default user's shell (bash, zsh, etc.). \nUseful if the command is not a commandline but a shell script, or if it's important to preserve real environment of the user's terminal. \nIn the case of 'false' value the command will be started as a process"
+     },
+     "reuseExistingTerminalWindow": {
+      "type": "boolean",
+      "description": "Whether to reuse an existing terminal window. Allows to avoid creating multiple terminals"
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     },
+     "maxLinesCount": {
+      "type": "integer",
+      "description": "Maximum number of lines to return"
+     },
+     "truncateMode": {
+      "type": "string",
+      "enum": [
+       "START",
+       "MIDDLE",
+       "END",
+       "NONE"
+      ],
+      "description": "How to truncate the text: from the start, in the middle, at the end, or don't truncate at all"
+     }
+    },
+    "required": [
+     "command"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "is_timed_out": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Indicates whether the operation was timed out. 'true' value may mean that the results may be incomplete or partial. 'false', 'null' or missing value means that the operation has not been timed out."
+     },
+     "command_exit_code": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "command_output": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "command_output"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "fetch_query_result",
+   "description": "Fetches rows from an already executed query by its id, starting at the given row offset.\nReturns the same shape as `execute_sql_query`: the `resultSetId` and the rendered result in CSV format.\nUse this tool to paginate over a previously returned `resultSetId` from `execute_sql_query` or `preview_table_data`.",
+   "inputSchema": {
+    "properties": {
+     "resultSetId": {
+      "type": "string",
+      "description": "The opaque result set ID returned by a previous `execute_sql_query` or `preview_table_data` call."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Row offset to start fetching from (0-based)."
+     }
+    },
+    "required": [
+     "resultSetId",
+     "offset"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "resultSetId": {
+      "type": "string",
+      "description": "ID of the cached query result set. Pass it to `fetch_query_result` to retrieve additional pages. Empty if the error happens before getting any result."
+     },
+     "text": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Rendered query result in CSV format, or a status message if the query returned no rows. Empty if the query failed."
+     },
+     "errorMessage": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Error description if the query failed at the database; empty otherwise. Treat any non-empty value here as a failure regardless of `text`."
+     }
+    },
+    "required": [
+     "resultSetId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "find_lock_requirements_usages",
+   "description": "Analyzes the usage of the Read/Write lock for the method under the caret.\nAlso analyzes call paths to some depth.\nUse this tool to identify possible usages of Read/Write lock requirements.\nReturns a list of lock requirements with the call path to them.\nImportant: the information is neither complete nor reliable: this is merely a heuristic. Each returned call path may not be reachable,\nand there could be undetected call paths.\nNote: Only analyzes files within the project directory.\nNote: Lines and Columns are 1-based.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "line": {
+      "type": "integer",
+      "description": "Line where cursor is located"
+     },
+     "column": {
+      "type": "integer",
+      "description": "Column where cursor is located"
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "filePath",
+     "line",
+     "column"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "foundRequirements": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "type",
+        "callPath"
+       ],
+       "properties": {
+        "type": {
+         "type": "string",
+         "enum": [
+          "READ_ASSERTION",
+          "WRITE_ASSERTION",
+          "WRITE_INTENT_ASSERTION",
+          "NO_READ_ASSERTION"
+         ]
+        },
+        "callPath": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "className",
+           "methodName"
+          ],
+          "properties": {
+           "className": {
+            "type": "string"
+           },
+           "methodName": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "timedOut": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "foundRequirements",
+     "timedOut"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "find_threading_requirements_usages",
+   "description": "Analyzes the usage of threading constraints (i.e., whether the method needs to run on the UI thread or on the background thread) for the method under the caret.\nAlso analyzes call paths to some depth.\nUse this tool to identify possible usages of threading requirements.\nReturns a list of threading requirements with the call path to them.\nImportant: the information is neither complete nor reliable: this is merely a heuristic. Each returned call path may not be reachable,\nand there could be undetected call paths.\nNote: Only analyzes files within the project directory.\nNote: Lines and Columns are 1-based.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "line": {
+      "type": "integer",
+      "description": "Line where cursor is located"
+     },
+     "column": {
+      "type": "integer",
+      "description": "Column where cursor is located"
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "filePath",
+     "line",
+     "column"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "foundRequirements": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "type",
+        "callPath"
+       ],
+       "properties": {
+        "type": {
+         "type": "string",
+         "enum": [
+          "UI_THREAD",
+          "BACKGROUND_THREAD"
+         ]
+        },
+        "callPath": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "className",
+           "methodName"
+          ],
+          "properties": {
+           "className": {
+            "type": "string"
+           },
+           "methodName": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "timedOut": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "foundRequirements",
+     "timedOut"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_inspection_kts_api",
+   "description": "    Returns the Inspection KTS API documentation for the target language.\n    Provides available classes and functions that can be used when writing inspection.kts files.",
+   "inputSchema": {
+    "properties": {
+     "language": {
+      "type": "string",
+      "description": "Target language: 'Java' or 'Kotlin'"
+     },
+     "wrapInTags": {
+      "type": "boolean",
+      "description": "If true, wraps the API content in <API> and <api.kt> tags"
+     }
+    },
+    "required": [
+     "language"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_inspection_kts_examples",
+   "description": "    Returns example inspection.kts templates for the target language to guide code generation.\n    Provides XML-wrapped examples showing how to write inspections using the InspectionKts API.",
+   "inputSchema": {
+    "properties": {
+     "language": {
+      "type": "string",
+      "description": "Target language for examples: 'Java', 'Kotlin', or 'Any' (default)"
+     },
+     "includeAdditionalExamples": {
+      "type": "boolean",
+      "description": "If true, includes additional curated examples besides templates"
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "generate_psi_tree",
+   "description": "    Creates a PSI tree for provided Java or Kotlin code and returns it as indented text.\n    Use this tool to understand the PSI structure of code snippets when writing inspections.\n    The output shows element types and their hierarchy, with hints about when node.children() is needed.",
+   "inputSchema": {
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "Source code snippet to parse"
+     },
+     "language": {
+      "type": "string",
+      "description": "Programming language: 'Java' or 'Kotlin'"
+     }
+    },
+    "required": [
+     "code",
+     "language"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_all_open_file_paths",
+   "description": "Returns active editor's and other open editors' file paths relative to the project root.\n\nUse this tool to explore current open editors.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "activeFilePath": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "openFiles": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "openFiles"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_database_object_description",
+   "description": "Retrieves the structure of a database object (columns, types, keys, indexes) within a particular schema as a hierarchical text representation.\nIn case of ambiguity returns definition of all applicable objects.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     },
+     "kind": {
+      "type": "string",
+      "description": "Non-empty object kind (e.g., table, view, routine)."
+     },
+     "objectName": {
+      "type": "string",
+      "description": "Non-empty object name of the specified kind (e.g., table or view name)."
+     }
+    },
+    "required": [
+     "connectionId",
+     "databaseName",
+     "schemaName",
+     "kind",
+     "objectName"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "schemaInfo": {
+      "type": "object",
+      "required": [
+       "databaseName",
+       "schemaName",
+       "isIntrospected"
+      ],
+      "properties": {
+       "databaseName": {
+        "type": "string",
+        "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+       },
+       "schemaName": {
+        "type": "string",
+        "description": "Name of the schema."
+       },
+       "isIntrospected": {
+        "type": "boolean",
+        "description": "Whether the schema metadata has been loaded (introspected)."
+       }
+      },
+      "description": "Schema information."
+     },
+     "definitions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "DDL tree descriptions of the schema objects."
+     }
+    },
+    "required": [
+     "schemaInfo",
+     "definitions"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_file_problems",
+   "description": "Analyzes the specified file for errors and warnings using IntelliJ's inspections.\nUse this tool to identify coding issues, syntax errors, and other problems in a specific file.\nReturns a list of problems found in the file, including severity, description, and location information.\nNote: Only analyzes files within the project directory.\nNote: Lines and Columns are 1-based.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "errorsOnly": {
+      "type": "boolean",
+      "description": "Whether to include only errors or include both errors and warnings"
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "filePath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string"
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "severity",
+        "description",
+        "lineContent",
+        "line",
+        "column"
+       ],
+       "properties": {
+        "severity": {
+         "type": "string"
+        },
+        "description": {
+         "type": "string"
+        },
+        "lineContent": {
+         "type": "string"
+        },
+        "line": {
+         "type": "integer"
+        },
+        "column": {
+         "type": "integer"
+        }
+       }
+      }
+     },
+     "timedOut": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Indicates whether the operation was timed out. 'true' value may mean that the results may be incomplete or partial. 'false', 'null' or missing value means that the operation has not been timed out."
+     }
+    },
+    "required": [
+     "filePath",
+     "errors"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_project_dependencies",
+   "description": "Get a list of all dependencies defined in the project.\nIncludes JPS module libraries and ecosystem-specific dependencies contributed by language plugins.\n(e.g. package.json, deno.json dependencies)\nEach entry has a name and, when known, a version, a dependencyType (e.g. devDependencies),\nand a source (e.g. jps-library, package.json).\nReturns structured information about project library names.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "dependencies": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name"
+       ],
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "version": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "dependencyType": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "source": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "dependencies"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_project_modules",
+   "description": "Get a list of all modules in the project with their types.\nReturns structured information about each module including name and type.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "modules": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name"
+       ],
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "type": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "modules"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_python_environment",
+   "description": "    Returns the Python environment configured for the given file.\n    Reports the interpreter version, environment type (venv/conda/system), executable path, and package manager.\n    Use this before running Python commands to know which executable and package manager to invoke.\n    If the response contains a non-null \"noInterpreterConfigured\" field, no interpreter is set up for this module.\n    Follow the instructions in that field to resolve it — call configure_python_interpreter when it says so.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Absolute or project-relative path to the Python file (e.g. '/abs/path/file.py' or 'src/main.py')."
+     }
+    },
+    "required": [
+     "filePath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "pythonVersion": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Interpreter version string, e.g. 'Python 3.11.4'; null when no interpreter is configured"
+     },
+     "environmentType": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "'venv', 'conda', 'system', or 'unknown'; null when no interpreter is configured"
+     },
+     "executablePath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Absolute path to the Python binary to invoke; null when no interpreter is configured"
+     },
+     "environmentPath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Root of the virtual environment (venv prefix or conda prefix); null for system Python or unconfigured"
+     },
+     "packageManager": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "'pip', 'uv', 'poetry', 'hatch', 'conda', or 'unknown'; null when no interpreter is configured"
+     },
+     "noInterpreterConfigured": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "When non-null, no interpreter is configured for this module. Describes the current state and what action to take next."
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_repositories",
+   "description": "Retrieves the list of VCS roots in the project.\nThis is useful to detect all repositories in a multi-repository project.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "roots": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "pathRelativeToProject",
+        "vcsName"
+       ],
+       "properties": {
+        "pathRelativeToProject": {
+         "type": "string",
+         "description": "Path of repository relative to the project directory. Empty string means the project root"
+        },
+        "vcsName": {
+         "type": "string",
+         "description": "VCS used by this repository"
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "roots"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_run_configurations",
+   "description": "Returns either project run configurations or executable code locations, depending on the input.\n\nWithout `filePath`, this tool lists the project's existing run configurations. The result includes configuration\nnames and, when available, launch details such as program arguments, working directory, environment variables,\nand `supportsDynamicLaunchOverrides`.\n\n`supportsDynamicLaunchOverrides` is the source-of-truth capability flag for one-time launch overrides\n(`programArguments`, `workingDirectory`, `envs`) in `execute_run_configuration` and `xdebug_start_debugger_session`.\nOnly pass those override parameters when this flag is `true` for the selected configuration.\n\nWith `filePath`, this tool discovers executable entry points (run points) in that file, such as test methods,\nmain methods, or other executable entry points where the IDE shows a Run gutter icon. The result contains `filePath` and\n`runPoints`; use the returned line numbers with `execute_run_configuration` to run from code.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Optional file path relative to the project root. When provided, returns run points (executable entry points) in the file instead of project-wide run configurations."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "configurations": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "supportsDynamicLaunchOverrides"
+       ],
+       "properties": {
+        "name": {
+         "type": "string",
+         "description": "Run configuration name. Pass this value as `configurationName` to `execute_run_configuration`."
+        },
+        "description": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Human-readable run configuration type or description shown by the IDE, when available."
+        },
+        "supportsDynamicLaunchOverrides": {
+         "type": "boolean",
+         "description": "Whether this run configuration supports one-time dynamic launch overrides for `programArguments`, `workingDirectory`, and `envs`. Use this field as the source of truth before passing those override parameters to `execute_run_configuration` or `xdebug_start_debugger_session`."
+        },
+        "commandLine": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Configured command line or program arguments for this run configuration, when available."
+        },
+        "workingDirectory": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Configured working directory for this run configuration, when available."
+        },
+        "environment": {
+         "type": [
+          "object",
+          "null"
+         ],
+         "additionalProperties": {
+          "type": "string"
+         },
+         "description": "Configured environment variables for this run configuration, when available."
+        }
+       }
+      },
+      "description": "Project run configurations. Present when the tool is called without `filePath`."
+     },
+     "filePath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "File path relative to the project root for which `runPoints` were collected. Present only when the tool is called with `filePath`."
+     },
+     "runPoints": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "line"
+       ],
+       "properties": {
+        "line": {
+         "type": "integer",
+         "description": "1-based line number of the executable code location."
+        },
+        "description": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "IDE-provided description or tooltip for this run point, when available."
+        },
+        "elementText": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Short source snippet for the PSI element associated with this run point, when available."
+        }
+       }
+      },
+      "description": "Executable entry points discovered in `filePath`, such as test methods, main methods, or other executable entry points. Present only when the tool is called with `filePath`."
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "get_symbol_info",
+   "description": "Retrieves information about the symbol at the specified position in the specified file.\nProvides the same information as Quick Documentation feature of IntelliJ IDEA does.\n\nThis tool is useful for getting information about the symbol at the specified position in the specified file.\nThe information may include the symbol's name, signature, type, documentation, etc. It depends on a particular language.\n\nIf the position has a reference to a symbol the tool will return a piece of code with the declaration of the symbol if possible.\n\nUse this tool to understand symbols declaration, semantics, where it's declared, etc.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "line": {
+      "type": "integer",
+      "description": "1-based line number"
+     },
+     "column": {
+      "type": "integer",
+      "description": "1-based column number"
+     }
+    },
+    "required": [
+     "filePath",
+     "line",
+     "column"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "symbolInfo": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "declarationText"
+      ],
+      "properties": {
+       "name": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "declarationText": {
+        "type": "string"
+       },
+       "declarationFile": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "declarationLine": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "language": {
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     },
+     "documentation": {
+      "type": "string"
+     },
+     "partialResultReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "documentation"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "git_status",
+   "description": "Retrieves Git status for one or more repositories in the current project.\nReturns porcelain-style index/worktree status codes and summary counters.\nBy default all Git repositories are returned.",
+   "inputSchema": {
+    "properties": {
+     "repositoryPathRelativeToProject": {
+      "type": "string",
+      "description": "Optional path relative to project root used to select a single containing repository"
+     },
+     "includeUntracked": {
+      "type": "boolean",
+      "description": "Whether to include untracked files"
+     },
+     "includeIgnored": {
+      "type": "boolean",
+      "description": "Whether to include ignored files"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of entries returned per repository"
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "repositories": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "repositoryPathRelativeToProject",
+        "isClean",
+        "totalEntries",
+        "hasMoreEntries",
+        "stagedCount",
+        "unstagedCount",
+        "untrackedCount",
+        "ignoredCount",
+        "conflictedCount",
+        "entries"
+       ],
+       "properties": {
+        "repositoryPathRelativeToProject": {
+         "type": "string",
+         "description": "Path of this repository relative to project root. Empty string means the project root"
+        },
+        "currentBranch": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Current branch name, or null when detached"
+        },
+        "isClean": {
+         "type": "boolean",
+         "description": "True when repository has no status entries matching the selected filters"
+        },
+        "totalEntries": {
+         "type": "integer",
+         "description": "Total number of status entries before applying 'limit'"
+        },
+        "hasMoreEntries": {
+         "type": "boolean",
+         "description": "True when entries were truncated by 'limit'"
+        },
+        "stagedCount": {
+         "type": "integer",
+         "description": "Number of entries with staged changes"
+        },
+        "unstagedCount": {
+         "type": "integer",
+         "description": "Number of entries with unstaged changes"
+        },
+        "untrackedCount": {
+         "type": "integer",
+         "description": "Number of untracked entries"
+        },
+        "ignoredCount": {
+         "type": "integer",
+         "description": "Number of ignored entries"
+        },
+        "conflictedCount": {
+         "type": "integer",
+         "description": "Number of conflicted entries"
+        },
+        "entries": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "pathRelativeToRepository",
+           "indexStatus",
+           "workTreeStatus"
+          ],
+          "properties": {
+           "pathRelativeToRepository": {
+            "type": "string",
+            "description": "Path relative to repository root"
+           },
+           "indexStatus": {
+            "type": "string",
+            "description": "Index status code from git status porcelain output"
+           },
+           "workTreeStatus": {
+            "type": "string",
+            "description": "Working tree status code from git status porcelain output"
+           },
+           "originalPathRelativeToRepository": {
+            "type": [
+             "string",
+             "null"
+            ],
+            "description": "Original path for renames/copies, relative to repository root"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "repositories"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "introspect_schema",
+   "description": "Introspects a database schema, loading its metadata (tables, columns, indexes, etc.)\ninto the local model. Use this when a schema's `isIntrospected` flag is false\nand you need to investigate the schema's structure, or to refresh stale metadata.\nReturns the schema identifier with updated introspection status.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     }
+    },
+    "required": [
+     "connectionId",
+     "databaseName",
+     "schemaName"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     },
+     "isIntrospected": {
+      "type": "boolean",
+      "description": "Whether the schema metadata has been loaded (introspected)."
+     }
+    },
+    "required": [
+     "databaseName",
+     "schemaName",
+     "isIntrospected"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "lint_files",
+   "description": "Analyzes the specified files for errors and warnings using IntelliJ's inspections.\nUse this tool to lint several files after editing them.\nReturns per-file problems with severity, description, and location information.\nBatch responses may include file entries with `timedOut: true` and empty `problems` when individual files exceed the available budget.\nFile entries with a `notAnalyzedReason` indicate files that could not be analyzed (e.g., outside project content roots, excluded, or unsupported file type).\nTop-level `more: true` means the batch is incomplete.\n`min_severity` must be `warning` or `error`; defaults to `warning`.\nNote: Only analyzes files within the project directory.\nNote: Lines and Columns are 1-based.",
+   "inputSchema": {
+    "properties": {
+     "files": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "List of project-relative files to analyze. Duplicate paths are ignored after normalization."
+     },
+     "min_severity": {
+      "type": "string",
+      "description": "Minimum severity to include: `warning` or `error`. Defaults to `warning`."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "files"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "filePath"
+       ],
+       "properties": {
+        "filePath": {
+         "type": "string"
+        },
+        "notAnalyzedReason": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "problems": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "severity",
+           "description",
+           "lineText",
+           "line",
+           "column"
+          ],
+          "properties": {
+           "severity": {
+            "type": "string"
+           },
+           "description": {
+            "type": "string"
+           },
+           "lineText": {
+            "type": "string"
+           },
+           "line": {
+            "type": "integer"
+           },
+           "column": {
+            "type": "integer"
+           }
+          }
+         }
+        },
+        "timedOut": {
+         "type": [
+          "boolean",
+          "null"
+         ],
+         "description": "Indicates whether the operation was timed out. 'true' value may mean that the results may be incomplete or partial. 'false', 'null' or missing value means that the operation has not been timed out."
+        }
+       }
+      }
+     },
+     "more": {
+      "type": "boolean"
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_database_connections",
+   "description": "Retrieves a list of configured database connections or data sources in the project.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "connections": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "name",
+        "dbms",
+        "driverName",
+        "isDDL",
+        "readOnly",
+        "jdbcUrl"
+       ],
+       "properties": {
+        "id": {
+         "type": "string",
+         "description": "The unique ID of a database connection."
+        },
+        "name": {
+         "type": "string",
+         "description": "Human-readable name of a database connection or data source."
+        },
+        "dbms": {
+         "type": "string",
+         "description": "DBMS description."
+        },
+        "driverName": {
+         "type": "string",
+         "description": "JDBC driver description. Empty if driver is not set."
+        },
+        "isDDL": {
+         "type": "boolean",
+         "description": "True if the connection is a DDL data source, false otherwise.\nDDL data source is a collection of SQL scripts which define database schema and \ndoesn't correspond to a live connection to a particular DBMS"
+        },
+        "readOnly": {
+         "type": "boolean",
+         "description": "Whether the data source is read-only."
+        },
+        "jdbcUrl": {
+         "type": "string",
+         "description": "JDBC URL of the connection"
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "connections"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_database_schemas",
+   "description": "Retrieves a list of database schemas in the specified database connection.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     }
+    },
+    "required": [
+     "connectionId"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "schemas": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "databaseName",
+        "schemaName",
+        "isIntrospected"
+       ],
+       "properties": {
+        "databaseName": {
+         "type": "string",
+         "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+        },
+        "schemaName": {
+         "type": "string",
+         "description": "Name of the schema."
+        },
+        "isIntrospected": {
+         "type": "boolean",
+         "description": "Whether the schema metadata has been loaded (introspected)."
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "schemas"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_directory_tree",
+   "description": "Provides a tree representation of the specified directory in the pseudo graphic format like `tree` utility does.\nUse this tool to explore the contents of a directory or the whole project.\nYou MUST prefer this tool over listing directories via command line utilities like `ls` or `dir`.",
+   "inputSchema": {
+    "properties": {
+     "directoryPath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "maxDepth": {
+      "type": "integer",
+      "description": "Maximum recursion depth"
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "directoryPath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "traversedDirectory": {
+      "type": "string"
+     },
+     "tree": {
+      "type": "string"
+     },
+     "errors": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "listingTimedOut": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Indicates whether the operation was timed out. 'true' value may mean that the results may be incomplete or partial. 'false', 'null' or missing value means that the operation has not been timed out."
+     }
+    },
+    "required": [
+     "traversedDirectory",
+     "tree",
+     "errors"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_recent_sql_queries",
+   "description": "Retrieves a list of recent (including currently running) queries for the given database connection.\nDo not use this tool for DDL data sources as they have no underlying DBMS connection.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     }
+    },
+    "required": [
+     "connectionId"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "queries": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "sessionId",
+        "timeSpentMs",
+        "state",
+        "status",
+        "queryText"
+       ],
+       "properties": {
+        "sessionId": {
+         "type": "integer",
+         "description": "The unique ID of a query session."
+        },
+        "timeSpentMs": {
+         "type": "integer",
+         "description": "Time spent on running the query (in milliseconds)."
+        },
+        "state": {
+         "type": "string",
+         "enum": [
+          "SUBMITTED",
+          "RUNNING",
+          "CANCELLING",
+          "FINISHED"
+         ],
+         "description": "Current state of the query (running, cancelling, finished, etc.)."
+        },
+        "status": {
+         "type": "string",
+         "enum": [
+          "SUCCESS",
+          "WARNING",
+          "ERROR",
+          "CANCELLED",
+          "UNKNOWN"
+         ],
+         "description": "Completion status of the query (success, finished with error, cancelled, etc.)."
+        },
+        "queryText": {
+         "type": "string",
+         "description": "Text of the query"
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "queries"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_schema_object_kinds",
+   "description": "Retrieves supported schema object kinds (e.g., table, view, routine) for the given database connection.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     }
+    },
+    "required": [
+     "connectionId"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "objectKinds": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "code",
+        "name"
+       ],
+       "properties": {
+        "code": {
+         "type": "string",
+         "description": "Object kind unique code."
+        },
+        "name": {
+         "type": "string",
+         "description": "Human-readable name of the object kind."
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "objectKinds"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "list_schema_objects",
+   "description": "Retrieves a list of database objects within the given schema.",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     },
+     "kind": {
+      "type": "string",
+      "description": "Object kind to filter by (e.g., table, view). If null, returns all objects in the schema."
+     }
+    },
+    "required": [
+     "connectionId",
+     "databaseName",
+     "schemaName"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "schemaInfo": {
+      "type": "object",
+      "required": [
+       "databaseName",
+       "schemaName",
+       "isIntrospected"
+      ],
+      "properties": {
+       "databaseName": {
+        "type": "string",
+        "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+       },
+       "schemaName": {
+        "type": "string",
+        "description": "Name of the schema."
+       },
+       "isIntrospected": {
+        "type": "boolean",
+        "description": "Whether the schema metadata has been loaded (introspected)."
+       }
+      },
+      "description": "Schema information."
+     },
+     "schemaObjects": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "kind"
+       ],
+       "properties": {
+        "name": {
+         "type": "string",
+         "description": "Name of the object."
+        },
+        "kind": {
+         "type": "string",
+         "description": "Code of the object kind (see `list_schema_object_kinds` tool)."
+        }
+       }
+      },
+      "description": "List of schema objects (e.g., tables, views, routines)."
+     }
+    },
+    "required": [
+     "schemaInfo",
+     "schemaObjects"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "open_file_in_editor",
+   "description": "Opens the specified file in the JetBrains IDE editor.\nRequires a filePath parameter containing the path to the file to open.\nThe file path can be absolute or relative to the project root.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     }
+    },
+    "required": [
+     "filePath"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "preview_table_data",
+   "description": "Previews data of the table, view, materialized view or other table-like object using given database connection.\nDo not use this tool for DDL data sources as they have no underlying DBMS connection.\nReturns table content in CSV format",
+   "inputSchema": {
+    "properties": {
+     "connectionId": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     },
+     "databaseName": {
+      "type": "string",
+      "description": "Name of the database the schema belongs to. Might be empty if DBMS has no databases, but only schemas.\nTogether with `schemaName` property forms qualified schema name that uniquely identifies the schema within the connection."
+     },
+     "schemaName": {
+      "type": "string",
+      "description": "Name of the schema."
+     },
+     "tableName": {
+      "type": "string",
+      "description": "Name of the table."
+     },
+     "maxRowCount": {
+      "type": "integer",
+      "description": "Maximum number of rows to return. Default is 10. You must NOT pass zero or negative value for this argument."
+     }
+    },
+    "required": [
+     "connectionId",
+     "databaseName",
+     "schemaName",
+     "tableName"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "resultSetId": {
+      "type": "string",
+      "description": "ID of the cached query result set. Pass it to `fetch_query_result` to retrieve additional pages. Empty if the error happens before getting any result."
+     },
+     "text": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Rendered query result in CSV format, or a status message if the query returned no rows. Empty if the query failed."
+     },
+     "errorMessage": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Error description if the query failed at the database; empty otherwise. Treat any non-empty value here as a failure regardless of `text`."
+     }
+    },
+    "required": [
+     "resultSetId"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "read_file",
+   "description": "        Reads a file in the project directory or from any project dependency or other project source root.\n        Can read sources inside Jar/Jrt files and decompile Java class files inside Jar/Jrt files or on disk. \n        Returns numbered lines (1-indexed) as text.\n        By default, reads up to 2000 lines starting from the beginning of the file.\n        The maximum accepted limit is 5000 lines.",
+   "inputSchema": {
+    "properties": {
+     "file_path": {
+      "type": "string",
+      "description": "Path to the file. Supports project-relative paths, paths with '..', absolute paths, archive entries like '/path/lib.jar!/pkg/Foo.class', and URLs such as 'file://', 'jar://', and 'jrt://'. Any path returned from the other tools can be passed as is (e.g. paths from 'search_*' tools)."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "1-based line number to start reading from"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of lines to return (default: 2000, max: 5000)"
+     }
+    },
+    "required": [
+     "file_path"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "recognize_ij_module_kind",
+   "description": "Recognizes the effective Split Mode module kind for a plugin.xml or content-module descriptor\nusing the same DevKit analysis as the remdev inspections.\nReturns the effective kind and the reasoning used to compute it.\nPossible kinds include `shared`, `frontend`, `backend`, `monolith`, and `mixed`.",
+   "inputSchema": {
+    "properties": {
+     "descriptorPath": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     }
+    },
+    "required": [
+     "descriptorPath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "moduleName": {
+      "type": "string",
+      "description": "Resolved IntelliJ module name that owns the descriptor."
+     },
+     "descriptorPath": {
+      "type": "string",
+      "description": "Descriptor path that was analyzed, relative to the project root when provided that way."
+     },
+     "kindId": {
+      "type": "string",
+      "description": "Effective Split Mode module kind. One of: `shared`, `frontend`, `backend`, `monolith`, `mixed`."
+     },
+     "reasoning": {
+      "type": "string",
+      "description": "Reasoning produced by the same DevKit module-kind analysis used by the remdev inspections."
+     }
+    },
+    "required": [
+     "moduleName",
+     "descriptorPath",
+     "kindId",
+     "reasoning"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "reformat_file",
+   "description": "Reformats the specified files in the JetBrains IDE.\nUse this tool to apply code formatting rules to files identified by their project-relative paths.",
+   "inputSchema": {
+    "properties": {
+     "files": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "List of project-relative files to reformat. Duplicate paths are ignored after normalization."
+     }
+    },
+    "required": [
+     "files"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "rename_refactoring",
+   "description": "        Renames a symbol (variable, function, class, etc.) in the specified file.\n        Use this tool to perform rename refactoring operations. \n        \n        The `rename_refactoring` tool is a powerful, context-aware utility. Unlike a simple text search-and-replace, \n        it understands the code's structure and will intelligently update ALL references to the specified symbol throughout the project,\n        ensuring code integrity and preventing broken references. It is ALWAYS the preferred method for renaming programmatic symbols.\n\n        Requires three parameters:\n            - pathInProject: The relative path to the file from the project's root directory (e.g., `src/api/controllers/userController.js`)\n            - symbolName: The exact, case-sensitive name of the existing symbol to be renamed (e.g., `getUserData`)\n            - newName: The new, case-sensitive name for the symbol (e.g., `fetchUserData`).\n            \n        Returns a success message if the rename operation was successful.\n        Returns an error message if the file or symbol cannot be found or the rename operation failed.",
+   "inputSchema": {
+    "properties": {
+     "pathInProject": {
+      "type": "string",
+      "description": "Path relative to the project root"
+     },
+     "symbolName": {
+      "type": "string",
+      "description": "Name of the symbol to rename"
+     },
+     "newName": {
+      "type": "string",
+      "description": "New name for the symbol"
+     }
+    },
+    "required": [
+     "pathInProject",
+     "symbolName",
+     "newName"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "run_inspection_kts",
+   "description": "    Compiles an inspection.kts script and runs it against a target file.\n    Returns compilation errors if any, or the list of problems found by the inspection.\n    Use this tool to test inspection.kts scripts during development.",
+   "inputSchema": {
+    "properties": {
+     "inspectionKtsCode": {
+      "type": "string",
+      "description": "The inspection.kts script content to compile and run"
+     },
+     "contextPath": {
+      "type": "string",
+      "description": "Relative path of the target file inside project to analyze (e.g., 'src/my/package/Example.kt'"
+     },
+     "targetFileContent": {
+      "type": "string",
+      "description": "The content of the target file to analyze. If not provided, the file must exist in the project."
+     }
+    },
+    "required": [
+     "inspectionKtsCode",
+     "contextPath"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "compilationSuccess": {
+      "type": "boolean"
+     },
+     "compilationStatus": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "compilationErrorDetails": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "inspectionResultMessage": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "foundProblems": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "message",
+        "lineNumber",
+        "highlightType"
+       ],
+       "properties": {
+        "message": {
+         "type": "string"
+        },
+        "lineNumber": {
+         "type": "integer"
+        },
+        "highlightType": {
+         "type": "string"
+        },
+        "startOffset": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endOffset": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "elementText": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "compilationSuccess"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "search_file",
+   "description": "Searches for files by glob pattern within the project.\nUse this tool when you need to match file paths using glob syntax.\n\nGlob patterns are relative to the project root.\nExamples: \"**/*.kt\", \"src/**/Foo*.java\", \"build.gradle.kts\".\nPatterns without '/' are treated as \"**/pattern\".\nPaths are optional additional glob filters relative to the project root.",
+   "inputSchema": {
+    "properties": {
+     "q": {
+      "type": "string",
+      "description": "Glob pattern to search for"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of project-relative glob patterns to filter results. Supports '!' excludes. Trailing '/' expands to '**'. Patterns without '/' are treated as '**/pattern'. Empty strings are ignored."
+     },
+     "includeExcluded": {
+      "type": "boolean",
+      "description": "Whether to include excluded/ignored files in results"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of results to return"
+     }
+    },
+    "required": [
+     "q"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "filePath"
+       ],
+       "properties": {
+        "filePath": {
+         "type": "string"
+        },
+        "startLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "startColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "more": {
+      "type": "boolean"
+     },
+     "partialResultReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "search_regex",
+   "description": "Searches for regex matches within project files.\nUse this tool when you need regex search with match coordinates.\nResults include match coordinates when available (1-based line/column, end exclusive).\n\nPaths are glob patterns relative to the project root.\nExamples: [\"src/**\", \"!**/test/**\"], [\"**/*.kt\"], [\"foo/\"].",
+   "inputSchema": {
+    "properties": {
+     "q": {
+      "type": "string",
+      "description": "Regex pattern to search for"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of project-relative glob patterns to filter results. Supports '!' excludes. Trailing '/' expands to '**'. Patterns without '/' are treated as '**/pattern'. Empty strings are ignored."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of results to return"
+     }
+    },
+    "required": [
+     "q"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "filePath"
+       ],
+       "properties": {
+        "filePath": {
+         "type": "string"
+        },
+        "startLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "startColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "more": {
+      "type": "boolean"
+     },
+     "partialResultReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "search_symbol",
+   "description": "Searches for symbols (classes, methods, fields).\nUse this tool for semantic lookup by identifier fragments.\nResults include match coordinates when available (1-based line/column, end exclusive).\nFor call graph questions, use this only to locate the target symbol, then pass the fully qualified callable name\nto `analyze_calls` instead of using text search or Find Usages manually.\n\nPaths are glob patterns relative to the project root.\nBy default this searches project symbols only.\nIf you don't find a suitable result, try again with include_external=true to search SDK and library symbols too.",
+   "inputSchema": {
+    "properties": {
+     "q": {
+      "type": "string",
+      "description": "Symbol query text"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of project-relative glob patterns to filter results. Supports '!' excludes. Trailing '/' expands to '**'. Patterns without '/' are treated as '**/pattern'. Empty strings are ignored."
+     },
+     "include_external": {
+      "type": "boolean",
+      "description": "Whether to include SDK and library symbols. Disabled by default; if nothing suitable is found, try again with include_external=true."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of results to return"
+     }
+    },
+    "required": [
+     "q"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "filePath"
+       ],
+       "properties": {
+        "filePath": {
+         "type": "string"
+        },
+        "startLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "startColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "more": {
+      "type": "boolean"
+     },
+     "partialResultReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "search_text",
+   "description": "Searches for a text substring within project files.\nUse this tool for fast text search with match coordinates.\nResults include match coordinates when available (1-based line/column, end exclusive).\n\nPaths are glob patterns relative to the project root.\nExamples: [\"src/**\", \"!**/test/**\"], [\"**/*.kt\"], [\"foo/\"].",
+   "inputSchema": {
+    "properties": {
+     "q": {
+      "type": "string",
+      "description": "Text to search for"
+     },
+     "paths": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of project-relative glob patterns to filter results. Supports '!' excludes. Trailing '/' expands to '**'. Patterns without '/' are treated as '**/pattern'. Empty strings are ignored."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Maximum number of results to return"
+     }
+    },
+    "required": [
+     "q"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "filePath"
+       ],
+       "properties": {
+        "filePath": {
+         "type": "string"
+        },
+        "startLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "startColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endLine": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "endColumn": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "more": {
+      "type": "boolean"
+     },
+     "partialResultReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "test_database_connection",
+   "description": "Checks whether a specific database connection is valid and reachable.\nDo not use this tool for DDL data sources as they have no underlying DBMS connection.\nReturns connection diagnostic info.",
+   "inputSchema": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "The unique ID of a database connection."
+     }
+    },
+    "required": [
+     "id"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "hasProblems": {
+      "type": "string",
+      "enum": [
+       "YES",
+       "NO",
+       "UNSURE"
+      ],
+      "description": "Shows if the connection is problematic (yes/no/unknown)."
+     },
+     "connectionInfo": {
+      "type": "string",
+      "description": "Detailed information about database connection such as DBMS type, version and JDBC driver."
+     },
+     "summary": {
+      "type": "string",
+      "description": "Summary of connection attempt result. In case of a failure, contains DBMS-provided error description."
+     }
+    },
+    "required": [
+     "hasProblems",
+     "connectionInfo",
+     "summary"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "validate_inspection_kts",
+   "description": "    Validates an inspection.kts script against specification examples.\n    Compiles the inspection and runs it against positive/negative examples.\n    Returns compilation status and detailed verification results.\n    \n    Positive examples should trigger the inspection (problems expected).\n    Negative examples should NOT trigger the inspection (no problems expected on forbidden lines).\n    \n    Returns overall success, per-example results, and aggregation statistics.",
+   "inputSchema": {
+    "properties": {
+     "inspectionKtsCode": {
+      "type": "string",
+      "description": "The inspection.kts script content to compile and validate"
+     },
+     "pathToSpecification": {
+      "type": "string",
+      "description": "Path to specification with examples to validate against."
+     }
+    },
+    "required": [
+     "inspectionKtsCode",
+     "pathToSpecification"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "compilationSuccess": {
+      "type": "boolean"
+     },
+     "compilationStatus": {
+      "type": "string"
+     },
+     "compilationErrorDetails": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "positiveExample": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "example",
+        "executionStatus"
+       ],
+       "properties": {
+        "example": {
+         "type": "object",
+         "required": [
+          "pathInProject",
+          "fileWithCodeToAnalyze"
+         ],
+         "properties": {
+          "pathInProject": {
+           "type": "string"
+          },
+          "fileWithCodeToAnalyze": {
+           "type": "string"
+          },
+          "expectedProblemRanges": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "object",
+            "required": [
+             "start",
+             "end"
+            ],
+            "properties": {
+             "start": {
+              "type": "integer"
+             },
+             "end": {
+              "type": "integer"
+             }
+            }
+           }
+          }
+         }
+        },
+        "executionStatus": {
+         "type": "string"
+        },
+        "falseNegative": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        },
+        "truePositive": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "negativeExample": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "example",
+        "executionStatus"
+       ],
+       "properties": {
+        "example": {
+         "type": "object",
+         "required": [
+          "pathInProject",
+          "fileWithCodeToAnalyze"
+         ],
+         "properties": {
+          "pathInProject": {
+           "type": "string"
+          },
+          "fileWithCodeToAnalyze": {
+           "type": "string"
+          },
+          "problemFreeRange": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "object",
+            "required": [
+             "start",
+             "end"
+            ],
+            "properties": {
+             "start": {
+              "type": "integer"
+             },
+             "end": {
+              "type": "integer"
+             }
+            }
+           }
+          }
+         }
+        },
+        "executionStatus": {
+         "type": "string"
+        },
+        "falsePositive": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        },
+        "trueNegative": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "optionalPositiveExample": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "example",
+        "executionStatus"
+       ],
+       "properties": {
+        "example": {
+         "type": "object",
+         "required": [
+          "pathInProject",
+          "fileWithCodeToAnalyze"
+         ],
+         "properties": {
+          "pathInProject": {
+           "type": "string"
+          },
+          "fileWithCodeToAnalyze": {
+           "type": "string"
+          },
+          "expectedProblemRanges": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "object",
+            "required": [
+             "start",
+             "end"
+            ],
+            "properties": {
+             "start": {
+              "type": "integer"
+             },
+             "end": {
+              "type": "integer"
+             }
+            }
+           }
+          }
+         }
+        },
+        "executionStatus": {
+         "type": "string"
+        },
+        "falseNegative": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        },
+        "truePositive": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "optionalNegativeExample": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "example",
+        "executionStatus"
+       ],
+       "properties": {
+        "example": {
+         "type": "object",
+         "required": [
+          "pathInProject",
+          "fileWithCodeToAnalyze"
+         ],
+         "properties": {
+          "pathInProject": {
+           "type": "string"
+          },
+          "fileWithCodeToAnalyze": {
+           "type": "string"
+          },
+          "problemFreeRange": {
+           "type": [
+            "array",
+            "null"
+           ],
+           "items": {
+            "type": "object",
+            "required": [
+             "start",
+             "end"
+            ],
+            "properties": {
+             "start": {
+              "type": "integer"
+             },
+             "end": {
+              "type": "integer"
+             }
+            }
+           }
+          }
+         }
+        },
+        "executionStatus": {
+         "type": "string"
+        },
+        "falsePositive": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        },
+        "trueNegative": {
+         "type": [
+          "array",
+          "null"
+         ],
+         "items": {
+          "type": "object",
+          "required": [
+           "start",
+           "end"
+          ],
+          "properties": {
+           "start": {
+            "type": "integer"
+           },
+           "end": {
+            "type": "integer"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "overallSuccess": {
+      "type": "boolean"
+     },
+     "validationStatus": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "compilationSuccess",
+     "compilationStatus",
+     "overallSuccess",
+     "validationStatus"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_control_session",
+   "description": "Controls the execution of a debug session.\nUse this tool to step through code, resume execution, pause, or stop the debug session.\n\nPreconditions:\n- A debug session must exist.\n- `STEP_*` and `RESUME` require a suspended session.\n\nActions:\n- STEP_INTO: Step into the next method call\n- STEP_OVER: Step over the current line\n- STEP_OUT: Step out of the current method\n- RESUME: Resume program execution until the next breakpoint\n- PAUSE: Pause program execution\n- STOP: Stop the debug session\n- WAIT_FOR_PAUSE: Wait until the session pauses (breakpoint hit or paused manually)\n- DRAIN_EVENTS: Drain tracepoint outputs for the session (breakpoint errors are drained for all actions)\n\nImportant notes:\n- If the program is running, use WAIT_FOR_PAUSE or PAUSE before STEP_* / RESUME.\n- Use a current `sessionId` from `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session stops, times out, or disappears, refresh the session list before the next session-scoped call.\n- RESUME does NOT set breakpoints. If there are no enabled breakpoints (or none will be hit next), the program may run to completion and the session may stop without pausing.\n- After RESUME, call WAIT_FOR_PAUSE to confirm the next suspension. If WAIT_FOR_PAUSE times out, consider PAUSE and re-check breakpoints.\n- `DRAIN_EVENTS` also requires an existing session; do not reuse a stale `sessionId` after the session has terminated.\n\nNext call:\n- After `RESUME`, call `xdebug_control_session(action=WAIT_FOR_PAUSE)`.\n- After a paused result, call `xdebug_get_stack` / `xdebug_get_frame_values` / `xdebug_evaluate_expression`.\n\nStatus values in the result:\n- running: Program is executing\n- paused: Execution is suspended (breakpoint, step, or manual pause); paused results also include `frameValues`, a current-frame snapshot in `xdebug_get_frame_values(depth=0)` format when available\n- stopped: Debug session has terminated\n- `breakpointErrorsTail` is returned for any action\n- `tracepointOutputsTail` is returned only for `DRAIN_EVENTS`\n\nEvent support scope:\n- Breakpoint error and tracepoint output events are currently reported only by JVM-based debuggers (Java, Kotlin, etc.).\n- On other debugger backends these event tails can be empty even when breakpoints/logging are configured.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "STEP_INTO",
+       "STEP_OVER",
+       "STEP_OUT",
+       "RESUME",
+       "PAUSE",
+       "STOP",
+       "WAIT_FOR_PAUSE",
+       "DRAIN_EVENTS"
+      ],
+      "description": "Action to perform: STEP_INTO, STEP_OVER, STEP_OUT, RESUME, PAUSE, STOP, WAIT_FOR_PAUSE, DRAIN_EVENTS. Event draining is currently populated only by JVM-based debuggers (Java, Kotlin, etc.)."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds to wait for action completion. Guidance: STEP_* / PAUSE usually 5000-15000; WAIT_FOR_PAUSE usually 30000-120000 depending on workload and breakpoints. Default: 30000."
+     },
+     "eventsLimit": {
+      "type": "integer",
+      "description": "Maximum number of latest events to drain per event list. For DRAIN_EVENTS this limit is applied independently to breakpointErrorsTail and tracepointOutputsTail. Default: 100."
+     },
+     "clearEventsAfterRead": {
+      "type": "boolean",
+      "description": "Compatibility flag. Returned events are always removed from internal buffers, regardless of this value."
+     }
+    },
+    "required": [
+     "action"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "running",
+       "paused",
+       "stopped"
+      ],
+      "description": "Session state after the control action."
+     },
+     "newPosition": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "filePath",
+       "line"
+      ],
+      "properties": {
+       "filePath": {
+        "type": "string",
+        "description": "File path as provided by the debugger (usually VirtualFile.url)."
+       },
+       "line": {
+        "type": "integer",
+        "description": "1-based line number."
+       },
+       "column": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "1-based column number when available."
+       }
+      },
+      "description": "Current source position when the session is paused (if available)."
+     },
+     "frameValues": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Snapshot of current frame values when the session is paused, using the same text format as `xdebug_get_frame_values` with `depth=0`."
+     },
+     "breakpointsMuted": {
+      "type": "boolean",
+      "description": "Whether breakpoints are globally muted for this debugger session."
+     },
+     "message": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Additional context message for timeout/already-paused/already-stopped situations."
+     },
+     "breakpointErrorsTail": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "type",
+        "timestampMs",
+        "timestampIso",
+        "sessionId",
+        "message"
+       ],
+       "properties": {
+        "type": {
+         "type": "string",
+         "enum": [
+          "BREAKPOINT_ERROR",
+          "TRACEPOINT_OUTPUT"
+         ],
+         "description": "Event type (BREAKPOINT_ERROR or TRACEPOINT_OUTPUT)."
+        },
+        "timestampMs": {
+         "type": "integer",
+         "description": "Unix timestamp in milliseconds when the event was recorded."
+        },
+        "timestampIso": {
+         "type": "string",
+         "description": "ISO-8601 timestamp when the event was recorded."
+        },
+        "sessionId": {
+         "type": "string",
+         "description": "Debugger session identifier."
+        },
+        "message": {
+         "type": "string",
+         "description": "Primary event message."
+        },
+        "breakpointId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Canonical breakpoint ID when available."
+        },
+        "filePath": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Breakpoint file path as provided by debugger when available."
+        },
+        "line": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "1-based breakpoint line when available."
+        },
+        "details": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Additional event context details when available."
+        }
+       }
+      },
+      "description": "Latest drained breakpoint error events. Returned for any control_session action. Indicates errors in breakpoints configuration like invalid conditional/log expressions. Currently populated only by JVM-based debuggers (Java, Kotlin, etc.)."
+     },
+     "tracepointOutputsTail": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "object",
+       "required": [
+        "type",
+        "timestampMs",
+        "timestampIso",
+        "sessionId",
+        "message"
+       ],
+       "properties": {
+        "type": {
+         "type": "string",
+         "enum": [
+          "BREAKPOINT_ERROR",
+          "TRACEPOINT_OUTPUT"
+         ],
+         "description": "Event type (BREAKPOINT_ERROR or TRACEPOINT_OUTPUT)."
+        },
+        "timestampMs": {
+         "type": "integer",
+         "description": "Unix timestamp in milliseconds when the event was recorded."
+        },
+        "timestampIso": {
+         "type": "string",
+         "description": "ISO-8601 timestamp when the event was recorded."
+        },
+        "sessionId": {
+         "type": "string",
+         "description": "Debugger session identifier."
+        },
+        "message": {
+         "type": "string",
+         "description": "Primary event message."
+        },
+        "breakpointId": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Canonical breakpoint ID when available."
+        },
+        "filePath": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Breakpoint file path as provided by debugger when available."
+        },
+        "line": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "1-based breakpoint line when available."
+        },
+        "details": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Additional event context details when available."
+        }
+       }
+      },
+      "description": "Latest drained tracepoint output events. Returned only for DRAIN_EVENTS action. Currently populated only by JVM-based debuggers (Java, Kotlin, etc.)."
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_disassemble",
+   "description": "Disassembles a paused native debug session: returns `count` consecutive machine instructions\nfrom `address`, or from the frame's program counter when no address is given - the same listing the\nIDE's Disassembly view shows.\nUse this whenever the question is about the instruction rather than the statement: which of several\nmemory accesses on one source line actually faulted, what an optimised build really emitted, or whether\nan address holds code at all. `xdebug_get_stack` maps an address to a source line, which on an optimised\nbuild or a wild branch is the answer to a different question.\n\nPreconditions:\n- The session must be suspended; pause it first with `xdebug_control_session(action=WAIT_FOR_PAUSE)` or `PAUSE`.\n- The session must be a native debug session (GDB / LLDB / DAP).\n\nFormat:\n- `instructions` are consecutive and in ascending address order: an entry's `address` plus its `size` is\n  the next entry's `address`, so a gap would be visible. `opcodes` are the `size` bytes it was decoded\n  from, and `text` is the debugger's own rendering.\n- `symbol` / `symbolOffset` place an instruction inside a function. They are absent where the target has\n  no symbol covering the address, which is itself worth noticing: a `pc` in unsymbolized memory is\n  usually a corrupted return address rather than a place the program meant to be.\n- `current` marks the instruction at `programCounter`, which is echoed back so that a listing taken at\n  some other address is not mistaken for the frame's own.\n- Fewer than `count` instructions come back when the target's code ends first. When it continues,\n  `truncated` is true and `nextAddress` is where to resume; at most 256 per call.\n- `flavor` names the spelling the listing was produced in, and is absent on a target whose instructions\n  have only one - which is every architecture except x86, whatever settings the debugger itself carries.\n- An address that holds no code fails the call rather than returning a plausible listing of whatever\n  bytes are there.\n\nNext call:\n- `xdebug_get_registers` for the register an operand names, or for the `pc` this defaults to.\n- `xdebug_read_memory` for the bytes at an address an instruction loads from.\n- `xdebug_get_stack` to map an instruction's address back to a source location.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "threadId": {
+      "type": "integer",
+      "description": "Thread ID as the debugger numbers threads (an integer, e.g. gdb's thread number) - not the thread display name that `xdebug_get_threads` / `xdebug_get_stack` use, and not the OS-level TID. Obtain it from the `threadId` of a previous `xdebug_get_registers` result. If null, uses the thread of the currently selected frame, which is what a single-threaded target such as a single-core MCU needs. Default: null."
+     },
+     "address": {
+      "type": "string",
+      "description": "Address to start disassembling at, as hexadecimal with a required `0x` prefix (for example `0xE000ED28`). A bare number fails the call rather than being read as hexadecimal, because nothing tells a decimal address from a hexadecimal one: a decimal `536871952` would be read as `0x536871952` and answer about memory nowhere near it. Every address these tools report is `0x`-prefixed, so one taken from a response is already spelled this way. If null, the program counter of the frame this call reads, which is the instruction about to execute there. Pass the `pc` of a hardware exception frame to see the instruction that faulted rather than the handler's own. Default: null."
+     },
+     "count": {
+      "type": "integer",
+      "description": "How many instructions to return, starting at `address`. Fewer come back when the target's code ends first; when it continues past them, `truncated` is true and `nextAddress` is where a follow-up call resumes. At most 256 per call. Default: 24."
+     },
+     "flavor": {
+      "type": "string",
+      "enum": [
+       "INTEL",
+       "ATT"
+      ],
+      "description": "Which spelling of x86 assembly to produce: `INTEL` (`mov eax, 1`) or `ATT` (`movl $1, %eax`). Every other instruction set has one spelling, so on any other architecture the request comes back in `flavorIgnoredReason` and the listing is the debugger's own, rather than the call failing. Choosing one does not change what the IDE's Disassembly view shows: the previous setting is restored. If null, the debugger's current flavor is used; either way `flavor` reports the one the listing was produced in, and is absent where the instructions have only one spelling. Default: null."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string"
+     },
+     "threadId": {
+      "type": "integer"
+     },
+     "frameIndex": {
+      "type": "integer"
+     },
+     "architecture": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "startAddress": {
+      "type": "string"
+     },
+     "programCounter": {
+      "type": "string"
+     },
+     "flavor": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "flavorIgnoredReason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "instructions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "address",
+        "size",
+        "opcodes",
+        "text"
+       ],
+       "properties": {
+        "address": {
+         "type": "string"
+        },
+        "size": {
+         "type": "integer"
+        },
+        "opcodes": {
+         "type": "string"
+        },
+        "text": {
+         "type": "string"
+        },
+        "symbol": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "symbolOffset": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "current": {
+         "type": "boolean"
+        }
+       }
+      }
+     },
+     "truncated": {
+      "type": "boolean"
+     },
+     "nextAddress": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "sessionId",
+     "threadId",
+     "frameIndex",
+     "startAddress",
+     "programCounter"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_evaluate_expression",
+   "description": "Evaluates an expression in the context of the current stack frame.\nUse this tool to compute values, call methods, or inspect expressions during debugging.\n\nPreconditions:\n- Session must be suspended.\n- Evaluation must be supported for the selected frame/language.\n- `expression` must be a valid expression in the language of the current frame.\n\nThe result is returned as:\n- depth == 0: just the presentation of the evaluated expression\n- depth > 0: the presentation plus a pseudo-graphics tree of its children up to the requested depth\n\nInput rules:\n- Pass raw expression text exactly as the debugger evaluator should parse it.\n- Do not pass JSON-escaped payloads or literal escape sequences such as `\\\\\"text\\\\\"`.\n\nNext call:\n- If expression confirms hypothesis, continue with `xdebug_control_session(STEP_*|RESUME)`.\n- If more detail is needed, inspect related values via `xdebug_get_frame_values` / `xdebug_get_value_by_path`.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "expression": {
+      "type": "string",
+      "description": "Expression to evaluate in the current context. Pass raw expression text in the language of the current frame; do not pass JSON-escaped payloads or literal backslash-escaped quoted text."
+     },
+     "depth": {
+      "type": "integer",
+      "description": "Maximum depth for expanding children of the evaluated result (0 = value only, 1 = immediate children, 2 = children + grandchildren, etc.). Default: 0."
+     }
+    },
+    "required": [
+     "expression"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_debugger_status",
+   "description": "Returns the current status of the debugger including all active debug sessions.\nUse this tool to get an overview of all running debug sessions and their states.\n\nPreconditions:\n- None.\n\nReturns explicit `sessions[]` and `activeSessionId`.\n\nNext call:\n- If no sessions are running, call `xdebug_start_debugger_session`.\n- If multiple sessions are active, use returned `id` as `sessionId` in subsequent calls.",
+   "inputSchema": {
+    "properties": {},
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessions": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "name",
+        "state"
+       ],
+       "properties": {
+        "id": {
+         "type": "string",
+         "description": "Session identifier to use as `sessionId` in debugger calls. Uses session name by default; if duplicate names exist, format is `<sessionName>#<executionId>`."
+        },
+        "name": {
+         "type": "string",
+         "description": "Session display name."
+        },
+        "state": {
+         "type": "string",
+         "enum": [
+          "running",
+          "paused",
+          "stopped"
+         ],
+         "description": "Current session state."
+        },
+        "runConfigurationName": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Associated run configuration name when available."
+        },
+        "breakpointsMuted": {
+         "type": "boolean",
+         "description": "Whether breakpoints are globally muted for this debugger session."
+        },
+        "currentPosition": {
+         "type": [
+          "object",
+          "null"
+         ],
+         "required": [
+          "filePath",
+          "line"
+         ],
+         "properties": {
+          "filePath": {
+           "type": "string",
+           "description": "File path as provided by the debugger (usually VirtualFile.url)."
+          },
+          "line": {
+           "type": "integer",
+           "description": "1-based line number."
+          },
+          "column": {
+           "type": [
+            "integer",
+            "null"
+           ],
+           "description": "1-based column number when available."
+          }
+         },
+         "description": "Current source position for paused sessions, if available."
+        }
+       }
+      },
+      "description": "All currently known debug sessions."
+     },
+     "activeSessionId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Identifier of the active session, if any."
+     }
+    },
+    "required": [
+     "sessions"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_frame_values",
+   "description": "Returns the values visible in the specified stack frame as a tree structure.\nUse this tool to inspect local variables, parameters, and fields or other values available at a specific point in the call stack.\n\nPreconditions:\n- Session must be suspended.\n- Frame index should come from the current paused `xdebug_get_stack` result.\n\nFormat:\n- Nodes that have children are marked with `+`.\n\nNext call:\n- Use `xdebug_get_value_by_path` to drill into nested fields.\n- Use `xdebug_evaluate_expression` for computed checks in the same frame.\n- Do not reuse a cached `frameIndex` after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "depth": {
+      "type": "integer",
+      "description": "Maximum depth for expanding nested objects (0 = no children (only frame variables), 1 = variables with first level children, 2 = two levels of children, etc.). Default: 0."
+     }
+    },
+    "required": [],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_registers",
+   "description": "Returns the CPU registers of a paused native debug session frame, grouped into the same\nregister sets the IDE's Registers view uses.\nUse this to read machine state that is not visible as a variable - the program counter of the current\ninstruction, the stack and frame pointers, the flags register, and the target's system registers.\nWhich registers exist is the target's business, not this tool's: an x86-64 process reports `rip`, `rsp`,\n`rflags` and the SSE/AVX sets, an AArch64 one `pc`, `sp`, `x0`-`x30`, and an ARM Cortex-M MCU adds\n`xpsr`, `msp`, `psp`, `primask`, `basepri`, `faultmask` and `control`.\n\nPreconditions:\n- The session must be suspended; pause it first with `xdebug_control_session(action=WAIT_FOR_PAUSE)` or `PAUSE`.\n- The session must be a native debug session (GDB / LLDB / DAP) whose driver supports registers.\n\nFiltering (optional, both narrow the response and neither changes any IDE setting):\n- `registerNames` selects individual registers, `registerSets` selects whole sets; both match\n  case-insensitively. Given together they act as a union - a register is returned when its set is listed\n  in `registerSets` or its own name is listed in `registerNames`.\n- A filter entry the target has nothing by that name for comes back in `unmatched.registerNames` /\n  `unmatched.registerSets`; it is never dropped silently and never fails the call, so a typo is\n  distinguishable from a register this core does not have.\n\nFormat:\n- Registers come back grouped in `sets`, in the order the debugger reports them (for example\n  `General Purpose`, `System`, `Floating Point`). Registers the debugger reports outside every set it\n  declares are returned in an `Other` set; when the driver reports no sets at all, a single `All` set is returned.\n- At most 256 registers are returned. If more match, `truncated` is true and\n  `maxRegisters` / `omittedRegisters` say what was left out in total, while every set that lost registers\n  reports its own `omittedRegisters`. No set is ever dropped and every set keeps the debugger's register\n  order, so a truncated response still names the whole register file; re-ask with `registerSets` naming a\n  trimmed set to get that set whole.\n- `hexValue` is the raw value exactly as the driver reports it: `0x`-prefixed and zero-padded, so its\n  digit count is the register width, whatever that width is - 4 bytes for `s0`, 8 for `rip`, 16 for `xmm0`,\n  64 for `zmm0`. This is the value; read it, do not derive it from anything else. It is absent unless the\n  driver reported a hex word for that register - the DAP driver reports none at all - and then\n  `naturalValue` is all there is.\n- `naturalValue` is how the debugger itself would show the same bits, as text: a decimal for an integer\n  register, a float for `d0`, a symbolic address for `sp` and `pc` (`0x20000400 <pulStack+1008>`), a list\n  of flag names for x86 `eflags`, and usually nothing at all above 8 bytes.\n  Which of those a register gets is what decides what its text means - a `double` holding `-1.0`\n  reads `-1`, and a 64-bit integer register reads back signed, so `0xdeadbeefcafebabe` reads\n  `-2401053089206453570`. Quote it; compute on `hexValue` where there is one, and mind that sign where\n  there is not.\n- Every set the target has is returned - subject only to the filters above - regardless of which sets are\n  enabled in the Registers view; this tool neither reads nor changes that UI preference.\n- `sessionId`, `threadId`, `frameIndex` and `architecture` are echoed back so a stale read is detectable.\n\nNext call:\n- `xdebug_get_stack` to map the program counter to a source location.\n- Do not reuse a cached `frameIndex` after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "threadId": {
+      "type": "integer",
+      "description": "Thread ID as the debugger numbers threads (an integer, e.g. gdb's thread number) - not the thread display name that `xdebug_get_threads` / `xdebug_get_stack` use, and not the OS-level TID. Obtain it from the `threadId` of a previous `xdebug_get_registers` result. If null, uses the thread of the currently selected frame, which is what a single-threaded target such as a single-core MCU needs. Default: null."
+     },
+     "registerSets": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of register set names to include, matched case-insensitively against the sets this target reports (for example `General Purpose`, `System`, `Floating Point`, `Other`). A name no set of this target has is reported in the response's `unmatched.registerSets` instead of failing the call. Also how a set the cap trimmed is re-requested: named on its own it comes back whole whenever it fits. If null or empty, every set is returned. Default: null."
+     },
+     "registerNames": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Optional list of register names to include, matched case-insensitively (for example `[\"pc\", \"sp\", \"lr\"]`). A name this target does not have is reported in the response's `unmatched.registerNames` instead of failing the call. Together with `registerSets` the two filters form a union: a register is returned when its set is listed in `registerSets` OR its own name is listed here. If null or empty, every register is returned. Default: null."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string"
+     },
+     "threadId": {
+      "type": "integer"
+     },
+     "frameIndex": {
+      "type": "integer"
+     },
+     "architecture": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "sets": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name",
+        "registers"
+       ],
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "registers": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "name"
+          ],
+          "properties": {
+           "name": {
+            "type": "string"
+           },
+           "hexValue": {
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "naturalValue": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          }
+         }
+        },
+        "omittedRegisters": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        }
+       }
+      }
+     },
+     "totalRegisters": {
+      "type": "integer"
+     },
+     "unmatched": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [],
+      "properties": {
+       "registerNames": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "registerSets": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "truncated": {
+      "type": "boolean"
+     },
+     "maxRegisters": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "omittedRegisters": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "sessionId",
+     "threadId",
+     "frameIndex"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_stack",
+   "description": "Returns the call stack for a thread in the debug session.\nUse this tool to see the sequence of method calls that led to the current execution point.\n\nPreconditions:\n- Session must be suspended.\n\nBehavior:\n- `threadId` should come from `xdebug_get_threads` and matches the debugger thread display name (defaults to active thread).\n- Includes frames even when source position is missing (file/line may be null).\n\nPagination:\n- `offset`/`limit` are applied after collecting the full stack.\n\nFrame fields include: index, file, line, isCurrent, presentation.\n`file` is reported as provided by the debugger (no path normalization).\n\nNext call:\n- Use frame index from the current paused result in `xdebug_get_frame_values`, `xdebug_get_value_by_path`, or `xdebug_evaluate_expression`.\n- Do not reuse a cached `frameIndex` after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "threadId": {
+      "type": "string",
+      "description": "Thread ID to get stack for. This value should come from `xdebug_get_threads` and matches the debugger thread display name, not an opaque numeric ID. If not specified, uses the current/active thread. Default: null."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max frames to return. Default: 200."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Page offset. Default: 0."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "frames": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "presentation",
+        "index",
+        "isCurrent"
+       ],
+       "properties": {
+        "presentation": {
+         "type": "string",
+         "description": "Rendered function/method frame label from debugger UI."
+        },
+        "index": {
+         "type": "integer",
+         "description": "0-based frame index to use as `frameIndex` in other debugger tools."
+        },
+        "file": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Source file path as provided by the debugger when available."
+        },
+        "line": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "1-based source line when available."
+        },
+        "isCurrent": {
+         "type": "boolean",
+         "description": "Whether this is the currently selected frame."
+        }
+       }
+      },
+      "description": "Stack frames for the selected thread, ordered from top (index 0) to older frames."
+     },
+     "threadId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Thread identifier used to fetch this stack."
+     },
+     "totalFrames": {
+      "type": "integer",
+      "description": "Total frame count for the stack."
+     }
+    },
+    "required": [
+     "frames",
+     "totalFrames"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_threads",
+   "description": "Returns the list of threads in the debug session.\nUse this tool to see all threads and their current status.\n\nPreconditions:\n- Session must be suspended.\n\nNext call:\n- Use `xdebug_get_stack` for the selected thread.\n\nPagination:\n- `offset`/`limit` are applied after collecting all stacks.\n\nOrdering:\n- Active thread first.\n- Remaining threads are sorted by descending stack depth.\n\nSchema fields: id, name, state, isCurrent, additionalInfo, additionalInfoTooltip, frameCount.\n`additionalInfo`/`additionalInfoTooltip` use additional display info when available.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size. Default: 50, max: 200."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Page offset. Default: 0."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "threads": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "name",
+        "state",
+        "isCurrent"
+       ],
+       "properties": {
+        "id": {
+         "type": "string",
+         "description": "Thread identifier to pass as `threadId` in `get_stack`."
+        },
+        "name": {
+         "type": "string",
+         "description": "Human-readable thread name."
+        },
+        "state": {
+         "type": "string",
+         "description": "Current thread status from debugger perspective."
+        },
+        "isCurrent": {
+         "type": "boolean",
+         "description": "Whether this thread is currently selected."
+        },
+        "additionalInfo": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Additional thread display info when available."
+        },
+        "additionalInfoTooltip": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Tooltip for additional thread display info when available."
+        },
+        "frameCount": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "Number of stack frames when available."
+        }
+       }
+      },
+      "description": "Threads available in the suspended debug session (paginated)."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Requested page offset."
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Requested page limit."
+     },
+     "totalCount": {
+      "type": "integer",
+      "description": "Total known thread count."
+     }
+    },
+    "required": [
+     "threads",
+     "offset",
+     "limit",
+     "totalCount"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_get_value_by_path",
+   "description": "Gets the value of a nested object by following a path of property names.\nUse this tool to drill down into complex objects and inspect their nested properties.\n\nPreconditions:\n- Session must be suspended.\n- Path must be non-empty and refer to names visible in the selected frame/object.\n\nThe result is returned as:\n- depth == 0: just the presentation of the value at the specified path\n- depth > 0: the presentation of the value plus a pseudo-graphics tree of its children up to the requested depth\n\nExample: To get the value of obj.field.subField, use path = [\"obj\", \"field\", \"subField\"].\nFor array/list indexers, pass the index token as a regular path element (child name), e.g.\nitems[0].name -> path = [\"items\", \"[0]\", \"name\"].\nUse exact child names from the current paused `xdebug_get_frame_values` / previous `xdebug_get_value_by_path` output\nbecause index node names may differ by language/debugger (for example, \"[0]\" vs \"0\").\nRefresh `path` tokens after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any other change in paused location.\n\nNext call:\n- Use another `xdebug_get_value_by_path` call to continue drilling deeper.\n- Use `xdebug_evaluate_expression` when direct name-path navigation is insufficient.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "List of child names to navigate through, e.g. ['myObject', 'field', 'subField'] or ['items', '[0]', 'name']. Use exact node names from the current paused `xdebug_get_frame_values` / `xdebug_get_value_by_path` output and refresh stale path tokens after the paused location changes."
+     },
+     "depth": {
+      "type": "integer",
+      "description": "Maximum depth for expanding children of the resolved value (0 = value only, 1 = immediate children, 2 = children + grandchildren, etc.). Default: 0."
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_list_breakpoints",
+   "description": "Lists all breakpoints in the project or in a specific file.\nUse this tool to see all currently set breakpoints and their properties.\n\nTip: Call this before RESUME to confirm there is at least one enabled breakpoint that is expected to be hit next.\n\nBehavior:\n- If `filePath` is provided, returns only breakpoints in that file.\n- Returns rich attributes for each breakpoint (id, type, file, line, enabled, owner, condition, isLogMessage, isLogStack, temporary, suspendPolicy, hitCount).\n- `breakpointsMuted` reports the session-wide debugger mute flag when a session is resolved; it does not change per-breakpoint `enabled` values.\n\nNext call:\n- If no suitable breakpoint exists, call `xdebug_set_breakpoint`.\n- Then continue execution with `xdebug_control_session(action=RESUME)` and `xdebug_control_session(action=WAIT_FOR_PAUSE)`.",
+   "inputSchema": {
+    "properties": {
+     "filePath": {
+      "type": "string",
+      "description": "Optional file path to filter breakpoints. Path to the file. Supports project-relative paths, paths with '..', absolute paths, archive entries like '/path/lib.jar!/pkg/Foo.class', and URLs such as 'file://', 'jar://', and 'jrt://'. Any path returned from the other tools can be passed as is (e.g. paths from 'search_*' tools). If not specified, returns all breakpoints. Default: null."
+     },
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null. Optional; when omitted, `breakpointsMuted` is returned only if exactly one active session exists."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "breakpoints": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "type",
+        "enabled",
+        "owner",
+        "isLogMessage",
+        "isLogStack",
+        "temporary",
+        "suspendPolicy",
+        "hitCount"
+       ],
+       "properties": {
+        "id": {
+         "type": "string",
+         "description": "Canonical breakpoint ID (stable across list/remove)."
+        },
+        "type": {
+         "type": "string",
+         "description": "Breakpoint type (line/exception/other)."
+        },
+        "file": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "File path of the breakpoint as provided by the debugger (usually file URL)."
+        },
+        "line": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "description": "1-based breakpoint line when available."
+        },
+        "enabled": {
+         "type": "boolean",
+         "description": "Whether breakpoint is enabled."
+        },
+        "owner": {
+         "type": "string",
+         "enum": [
+          "user",
+          "agent"
+         ],
+         "description": "Breakpoint ownership marker: `agent` if created/updated by MCP toolset, otherwise `user`."
+        },
+        "condition": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Conditional expression for triggering breakpoint, if set."
+        },
+        "logExpression": {
+         "type": [
+          "string",
+          "null"
+         ],
+         "description": "Evaluate-and-log expression of the logpoint, if set (the value logged when the line is reached)."
+        },
+        "isLogMessage": {
+         "type": "boolean",
+         "description": "Whether breakpoint logs source position when hit."
+        },
+        "isLogStack": {
+         "type": "boolean",
+         "description": "Whether breakpoint logs stack trace when hit."
+        },
+        "temporary": {
+         "type": "boolean",
+         "description": "Whether breakpoint is temporary."
+        },
+        "suspendPolicy": {
+         "type": "string",
+         "description": "Breakpoint suspend policy (all/thread/none)."
+        },
+        "hitCount": {
+         "type": "integer",
+         "description": "Breakpoint hit count, 0 when unavailable."
+        }
+       }
+      },
+      "description": "List of currently configured breakpoints."
+     },
+     "totalCount": {
+      "type": "integer",
+      "description": "Total count."
+     },
+     "enabledCount": {
+      "type": "integer",
+      "description": "Enabled count."
+     },
+     "breakpointsMuted": {
+      "type": "boolean",
+      "description": "Whether breakpoints are globally muted for the resolved debugger session."
+     }
+    },
+    "required": [
+     "breakpoints",
+     "totalCount",
+     "enabledCount"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_read_memory",
+   "description": "Reads a block of a paused native debug session's memory, returned as `count` units of `width`\nbytes starting at `address`.\nUse this for state that has an address but no variable - a memory-mapped peripheral register, a stack\nword below the stack pointer, the bytes behind a pointer - instead of hand-writing casts such as\n`*(uint32_t*)0xE000ED28` through `xdebug_evaluate_expression`, which needs a frame whose language\ncontext can parse them and answers with free text rather than data.\n\nPreconditions:\n- The session must be suspended; pause it first with `xdebug_control_session(action=WAIT_FOR_PAUSE)` or `PAUSE`.\n- The session must be a native debug session (GDB / LLDB / DAP).\n\nFormat:\n- `units` are in ascending address order and cover `range` without gaps. Each carries the address it\n  starts at and its value, zero-padded to `width` bytes, so the digit count is the unit width.\n- Every requested byte must be readable. If any is not, the call fails and names the range rather than\n  returning a shorter block: once read, an unreadable byte and a byte that is zero are the same bytes.\n  A failure therefore says the range is not fully mapped on this target - narrow it and read again.\n- `range`, `byteCount`, `width` and `byteOrder` echo what was read, and `sessionId` / `threadId` make a\n  stale read detectable.\n- Nothing here interprets the bytes. What lives at an address is the target's memory map, which is yours\n  to know; this tool only reports what is there.\n\nNext call:\n- `xdebug_get_registers` for the `pc`, `sp` or `lr` an address is usually derived from.\n- `xdebug_get_stack` to map a value that turns out to be a code pointer to a source location.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "threadId": {
+      "type": "integer",
+      "description": "Thread ID as the debugger numbers threads (an integer, e.g. gdb's thread number) - not the thread display name that `xdebug_get_threads` / `xdebug_get_stack` use, and not the OS-level TID. Obtain it from the `threadId` of a previous `xdebug_get_registers` result. If null, uses the thread of the currently selected frame, which is what a single-threaded target such as a single-core MCU needs. Default: null."
+     },
+     "address": {
+      "type": "string",
+      "description": "Address to start reading at, as hexadecimal with a required `0x` prefix (for example `0xE000ED28`). A bare number fails the call rather than being read as hexadecimal, because nothing tells a decimal address from a hexadecimal one: a decimal `536871952` would be read as `0x536871952` and answer about memory nowhere near it. Every address these tools report is `0x`-prefixed, so one taken from a response is already spelled this way. Take it from a `xdebug_get_registers` value, from a pointer reported by `xdebug_get_frame_values`, or from a target's documented memory map. Required."
+     },
+     "count": {
+      "type": "integer",
+      "description": "How many units of `width` bytes to read, starting at `address`. The whole range must be readable: if any byte of it is not, the call fails rather than returning a shorter block, because an unreadable byte and a byte that is zero look the same in the result. At most 256 units per call. Default: 1."
+     },
+     "width": {
+      "type": "integer",
+      "description": "Bytes per unit: 1, 2, 4 or 8. Pick the width the target itself loads at - 4 for a 32-bit peripheral register or a stacked word, 1 to see individual bytes. It only groups the bytes that were read; `count` units of `width` bytes is `count * width` bytes either way. Default: 4."
+     },
+     "byteOrder": {
+      "type": "string",
+      "enum": [
+       "LITTLE",
+       "BIG"
+      ],
+      "description": "Order in which each unit's bytes make up its value: `LITTLE` (least significant byte first) for ARM, x86 and RISC-V targets, `BIG` for a big-endian one. The debugger does not report which one the target uses, so this is taken as given and echoed back in the response rather than detected. Irrelevant when `width` is 1. Default: LITTLE."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds"
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string"
+     },
+     "threadId": {
+      "type": "integer"
+     },
+     "range": {
+      "type": "string"
+     },
+     "byteCount": {
+      "type": "integer"
+     },
+     "width": {
+      "type": "integer"
+     },
+     "byteOrder": {
+      "type": "string",
+      "enum": [
+       "LITTLE",
+       "BIG"
+      ]
+     },
+     "units": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "address",
+        "value"
+       ],
+       "properties": {
+        "address": {
+         "type": "string"
+        },
+        "value": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "sessionId",
+     "threadId",
+     "range",
+     "byteCount",
+     "width",
+     "byteOrder",
+     "units"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_remove_breakpoint",
+   "description": "Removes breakpoints filtered by owner and optional selectors.\nUse this tool to remove previously set breakpoints.\n\nBehavior:\n- `owner` defaults to `agent`.\n- If only `owner` is provided, removes all breakpoints of that owner.\n- If `breakpointId` is provided, removes matching breakpoint(s) for the selected owner.\n- If `filePath`+`line` are provided, removes matching line breakpoint(s) for the selected owner.\n- If multiple selectors are provided, all of them are combined (logical AND).\n- Idempotent: removing a non-existing breakpoint returns removed=false.\n- To remove all breakpoints regardless of owner, call twice: once with `owner=user`, once with `owner=agent`.\n\nNext call:\n- Use `xdebug_list_breakpoints` to verify the remaining set.",
+   "inputSchema": {
+    "properties": {
+     "breakpointId": {
+      "type": "string",
+      "description": "Canonical breakpoint ID returned by `xdebug_set_breakpoint` or `xdebug_list_breakpoints`."
+     },
+     "filePath": {
+      "type": "string",
+      "description": "Optional input: Path to the file. Supports project-relative paths, paths with '..', absolute paths, archive entries like '/path/lib.jar!/pkg/Foo.class', and URLs such as 'file://', 'jar://', and 'jrt://'. Any path returned from the other tools can be passed as is (e.g. paths from 'search_*' tools)."
+     },
+     "line": {
+      "type": "integer",
+      "description": "Optional input: line number (1-based) of the breakpoint to remove."
+     },
+     "owner": {
+      "type": "string",
+      "enum": [
+       "user",
+       "agent"
+      ],
+      "description": "Breakpoint owner filter. Default: agent."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "removed": {
+      "type": "boolean",
+      "description": "Whether at least one breakpoint was removed."
+     },
+     "removedCount": {
+      "type": "integer",
+      "description": "Number of breakpoints removed at the requested location."
+     },
+     "breakpointId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Removed breakpoint ID when operation targeted one ID."
+     },
+     "totalBreakpoints": {
+      "type": "integer",
+      "description": "Current total number of breakpoints after removal."
+     },
+     "message": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Additional note when no matching breakpoint is found."
+     }
+    },
+    "required": [
+     "removed",
+     "removedCount",
+     "totalBreakpoints"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_run_to_line",
+   "description": "Resumes execution to a target line.\nUse this tool to run until a specific source position without manually stepping.\n\nPreconditions:\n- Session must be suspended.\n- Target file/line must be valid.\n\nOutcome:\n- paused: session paused at or after target.\n- stopped: session terminated before pause.\n- timeout: no pause/stop within timeout window.\n\nNext call:\n- If paused, call `xdebug_get_stack` / `xdebug_get_frame_values` / `xdebug_evaluate_expression`.\n- If the session stopped or disappeared, refresh `sessionId` via `xdebug_get_debugger_status` before issuing another session-scoped call.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "filePath": {
+      "type": "string",
+      "description": "Target source file path. Path to the file. Supports project-relative paths, paths with '..', absolute paths, archive entries like '/path/lib.jar!/pkg/Foo.class', and URLs such as 'file://', 'jar://', and 'jrt://'. Any path returned from the other tools can be passed as is (e.g. paths from 'search_*' tools)."
+     },
+     "line": {
+      "type": "integer",
+      "description": "Target line number (1-based)."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds waiting for paused/stopped result. Default: 30000."
+     }
+    },
+    "required": [
+     "filePath",
+     "line"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Session identifier."
+     },
+     "outcome": {
+      "type": "string",
+      "enum": [
+       "paused",
+       "stopped",
+       "timeout"
+      ],
+      "description": "Outcome after attempting run-to-line (paused/stopped/timeout)."
+     },
+     "currentPosition": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "filePath",
+       "line"
+      ],
+      "properties": {
+       "filePath": {
+        "type": "string",
+        "description": "File path as provided by the debugger (usually VirtualFile.url)."
+       },
+       "line": {
+        "type": "integer",
+        "description": "1-based line number."
+       },
+       "column": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "1-based column number when available."
+       }
+      },
+      "description": "Current position when outcome is paused and position is known."
+     },
+     "message": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Additional context message (timeout or errors)."
+     }
+    },
+    "required": [
+     "sessionId",
+     "outcome"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_set_breakpoint",
+   "description": "Creates or updates a breakpoint or a logpoint (a non-suspending \"Evaluate and log\" breakpoint).\nUse this tool to set line breakpoints, set logpoints via `logExpression`, update existing breakpoints by ID, and control tracepoint/logging behavior.\n\nLogpoints are the preferred, low-disturbance probe, and providing a `logExpression` is the most important input:\nset `logExpression` together with `suspendPolicy=NONE` to evaluate an expression and log its result every time the line\nis reached WITHOUT stopping execution — the primary way to capture runtime values, branch/reachability evidence, counts,\nand identifiers. Read the logged output via `xdebug_control_session(action=DRAIN_EVENTS).tracepointOutputsTail`.\n\nTargeting modes:\n- By location: provide `filePath` + `line`, and omit `breakpointId` (or pass null). Do not use placeholder strings such as `\"\"`, `\"/\"`, or `\"__omit__\"`.\n- By ID: provide an existing opaque canonical `breakpointId` returned by `xdebug_set_breakpoint` or `xdebug_list_breakpoints` (optional `filePath`/`line` can relocate line breakpoints).\n- Breakpoint mute-only: provide only `sessionId` and `breakpointsMuted`.\n  Do not combine `breakpointsMuted` with breakpoint target or settings parameters.\n\nValidation:\n- In location mode, both `filePath` and `line` are required.\n- In ID mode, breakpoint must exist and be uniquely identified by `breakpointId`.\n- In location mode, `filePath` is relative to the project root, `line` is 1-based, and the target location must be executable.\n- In breakpoint mute-only mode, a debugger session must be resolved from `sessionId` or the single active session.\n\nEvent reporting:\n- Invalid `condition` expressions are reported asynchronously via `xdebug_control_session(...).breakpointErrorsTail`.\n- Tracepoint output from breakpoints with `isLogMessage` and/or `isLogStack` is drained via `xdebug_control_session(action=DRAIN_EVENTS).tracepointOutputsTail`.\n- Breakpoint-error and tracepoint-output reporting is currently supported only by JVM-based debuggers (Java, Kotlin, etc.).\n- A successful `xdebug_set_breakpoint` response does not guarantee that `condition` or tracepoint expressions are valid; check later `breakpointErrorsTail` before relying on them.\n- Successful line-breakpoint responses also include `lineText`, a truncated excerpt of the actual source line where the breakpoint now resides. Inspect it to confirm placement before resuming.\n\nApply semantics:\n- Provided fields are applied as the resulting state for the target breakpoint.\n- `condition=null` clears existing condition.\n- `logExpression` sets the Evaluate-and-log expression that is evaluated and logged when the breakpoint is hit; `logExpression=null` clears it. Combine with `suspendPolicy=NONE` for a non-suspending logpoint (the preferred way to capture values). Keep it side-effect-free; evaluation errors surface in `breakpointErrorsTail`.\n- `isLogMessage=true` logs breakpoint hit position.\n- `isLogStack=true` logs current stack trace.\n- If both flags are true, both position and stack are logged.\n- With `isLogMessage`/`isLogStack` + `suspendPolicy=NONE`, the breakpoint behaves as a tracepoint.\n- In ID mode, if `filePath`/`line` are provided for a line breakpoint, it is relocated (recreated) at the new location.\n- In ID mode, for non-line breakpoints, `filePath`/`line` are ignored and reported in `message`.\n- `breakpointsMuted` is a session-wide debugger flag; use it in a dedicated call with only `sessionId` and `breakpointsMuted`.\n  It does not change the per-breakpoint `enabled` value.\n- Any successful operation marks breakpoint as `agent` ownership (`mcpBreakpointMarker`).\n\nNext call:\n- Use returned `lineText` and/or `xdebug_list_breakpoints` to verify placement.\n- Start/continue execution via `xdebug_start_debugger_session` or `xdebug_control_session(action=RESUME)`.",
+   "inputSchema": {
+    "properties": {
+     "breakpointId": {
+      "type": "string",
+      "description": "Canonical breakpoint ID returned by `xdebug_set_breakpoint` or `xdebug_list_breakpoints`. If provided, the tool runs in ID mode. Omit this or pass null in location mode; do not use placeholder strings such as empty string or fake path-like values. Default: null."
+     },
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null. Use with `breakpointsMuted` in a dedicated mute-only call; do not combine that call with breakpoint target or settings parameters."
+     },
+     "filePath": {
+      "type": "string",
+      "description": "Path to the file. Supports project-relative paths, paths with '..', absolute paths, archive entries like '/path/lib.jar!/pkg/Foo.class', and URLs such as 'file://', 'jar://', and 'jrt://'. Any path returned from the other tools can be passed as is (e.g. paths from 'search_*' tools). Required only in location mode. Optional in ID mode to relocate line breakpoints."
+     },
+     "line": {
+      "type": "integer",
+      "description": "1-based line number. Required only in location mode. Optional in ID mode to relocate line breakpoints."
+     },
+     "condition": {
+      "type": "string",
+      "description": "Optional condition expression - breakpoint will only trigger when this evaluates to true. Validation errors are reported asynchronously via xdebug_control_session(...).breakpointErrorsTail (JVM-based debuggers only). Default: null."
+     },
+     "logExpression": {
+      "type": "string",
+      "description": "The Evaluate-and-log expression. When set, its result is logged each time the breakpoint is hit, read via xdebug_control_session(action=DRAIN_EVENTS).tracepointOutputsTail. Combine with suspendPolicy=NONE to make a non-suspending logpoint - the preferred, most important way to capture runtime values without freezing threads. Keep it side-effect-free (no mutation, I/O, or iterator/stream advancement). logExpression=null clears it. Default: null."
+     },
+     "isLogMessage": {
+      "type": "boolean",
+      "description": "Whether to log breakpoint hit position (source location) when breakpoint is reached. In JVM-based debuggers output is available via xdebug_control_session(action=DRAIN_EVENTS).tracepointOutputsTail. Default: false."
+     },
+     "isLogStack": {
+      "type": "boolean",
+      "description": "Whether to log stack trace when breakpoint is reached. In JVM-based debuggers output is available via xdebug_control_session(action=DRAIN_EVENTS).tracepointOutputsTail. Default: false."
+     },
+     "temporary": {
+      "type": "boolean",
+      "description": "Temporary breakpoint (removed after first hit). Default: false."
+     },
+     "suspendPolicy": {
+      "type": "string",
+      "enum": [
+       "ALL",
+       "THREAD",
+       "NONE"
+      ],
+      "description": "Suspend policy: ALL, THREAD, NONE. Default: ALL."
+     },
+     "enabled": {
+      "type": "boolean",
+      "description": "Whether breakpoint is enabled. Default: true."
+     },
+     "breakpointsMuted": {
+      "type": "boolean",
+      "description": "Session-wide breakpoint mute flag. When provided, call this tool with only `sessionId` plus `breakpointsMuted`; do not pass breakpointId, filePath, line, condition, logging, suspend, temporary, or enabled parameters. Default: null."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "breakpointId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Canonical breakpoint ID. Absent for breakpoint mute-only operations."
+     },
+     "previousBreakpointId": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Previous canonical breakpoint ID when operation relocated an existing line breakpoint."
+     },
+     "added": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "required": [
+       "id",
+       "type",
+       "enabled",
+       "owner",
+       "isLogMessage",
+       "isLogStack",
+       "temporary",
+       "suspendPolicy",
+       "hitCount"
+      ],
+      "properties": {
+       "id": {
+        "type": "string",
+        "description": "Canonical breakpoint ID (stable across list/remove)."
+       },
+       "type": {
+        "type": "string",
+        "description": "Breakpoint type (line/exception/other)."
+       },
+       "file": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "File path of the breakpoint as provided by the debugger (usually file URL)."
+       },
+       "line": {
+        "type": [
+         "integer",
+         "null"
+        ],
+        "description": "1-based breakpoint line when available."
+       },
+       "enabled": {
+        "type": "boolean",
+        "description": "Whether breakpoint is enabled."
+       },
+       "owner": {
+        "type": "string",
+        "enum": [
+         "user",
+         "agent"
+        ],
+        "description": "Breakpoint ownership marker: `agent` if created/updated by MCP toolset, otherwise `user`."
+       },
+       "condition": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "Conditional expression for triggering breakpoint, if set."
+       },
+       "logExpression": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "Evaluate-and-log expression of the logpoint, if set (the value logged when the line is reached)."
+       },
+       "isLogMessage": {
+        "type": "boolean",
+        "description": "Whether breakpoint logs source position when hit."
+       },
+       "isLogStack": {
+        "type": "boolean",
+        "description": "Whether breakpoint logs stack trace when hit."
+       },
+       "temporary": {
+        "type": "boolean",
+        "description": "Whether breakpoint is temporary."
+       },
+       "suspendPolicy": {
+        "type": "string",
+        "description": "Breakpoint suspend policy (all/thread/none)."
+       },
+       "hitCount": {
+        "type": "integer",
+        "description": "Breakpoint hit count, 0 when unavailable."
+       }
+      },
+      "description": "Details of the newly added or updated breakpoint. Absent for breakpoint mute-only operations."
+     },
+     "totalBreakpoints": {
+      "type": "integer",
+      "description": "Current total number of breakpoints after operation."
+     },
+     "lineText": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Short excerpt of the actual source line where the breakpoint resides, truncated when needed. Present for line breakpoints only."
+     },
+     "breakpointsMuted": {
+      "type": "boolean",
+      "description": "Whether breakpoints are globally muted for the resolved debugger session."
+     },
+     "message": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Additional note when requested and actual positions differ."
+     }
+    },
+    "required": [
+     "totalBreakpoints"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_set_variable",
+   "description": "Mutates a variable value by path in the selected stack frame.\nUse this tool to change state during debugging.\n\nPreconditions:\n- Session must be suspended.\n- Value must be modifiable.\n- `path` should come from the current paused `xdebug_get_frame_values` / `xdebug_get_value_by_path` output.\n\nPath format is the same as in `xdebug_get_value_by_path`.\n`newValue` must be a raw expression in the language of the current frame, and it must be assignable to the target value by the debugger/evaluator.\nDo not pass JSON-escaped payloads or literal escape sequences such as `\\\\\"text\\\\\"`.\n\nResult:\n- Returns oldValue/newValue/applied.\n- Unsupported mutation returns an error with a textual message.\n\nNext call:\n- Re-read value via `xdebug_get_value_by_path` or `xdebug_get_frame_values` to confirm.",
+   "inputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Debug session ID. Use the current ID returned by `xdebug_get_debugger_status` or `xdebug_start_debugger_session`. If a session has stopped, timed out, or disappeared, refresh the session list before reusing an old ID. Format: uses session name as ID by default; if multiple sessions share the same name, ID is `<sessionName>#<executionId>`. If null and exactly one active session exists, it is selected automatically. If multiple sessions are active and sessionId is omitted, the call fails. Default: null."
+     },
+     "frameIndex": {
+      "type": "integer",
+      "description": "Stack frame index counted from the top of the stack, the same `index` `xdebug_get_stack` reports: 0 is the frame execution is in, 1 its caller, and so on. Obtain this from the current paused `xdebug_get_stack` result; do not reuse a cached frame index after `RESUME`, `STEP_*`, `xdebug_run_to_line`, or any change in paused location. If null, uses the frame currently selected in the debugger, the one `xdebug_get_stack` marks `isCurrent`. Default: null."
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Path to target value, same format as `xdebug_get_value_by_path`. Use exact node names from the current paused `xdebug_get_frame_values` / `xdebug_get_value_by_path` output and refresh stale path tokens after the paused location changes."
+     },
+     "newValue": {
+      "type": "string",
+      "description": "New value expression to assign. Pass raw expression text in the language of the current frame; it must be assignable to the target value by the debugger/evaluator. Do not pass JSON-escaped payloads or literal backslash-escaped quoted text."
+     }
+    },
+    "required": [
+     "path",
+     "newValue"
+    ],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "path": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Variable path used for mutation."
+     },
+     "oldValue": {
+      "type": "string",
+      "description": "Value before mutation."
+     },
+     "newValue": {
+      "type": "string",
+      "description": "Value after mutation."
+     },
+     "applied": {
+      "type": "boolean",
+      "description": "Whether mutation was applied."
+     }
+    },
+    "required": [
+     "path",
+     "oldValue",
+     "newValue",
+     "applied"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "name": "xdebug_start_debugger_session",
+   "description": "Start a debugger session for either an existing run configuration by name or a code location\n(`filePath` + `line`) in the current project.\nUse this tool to start a debugger session.\nUse this tool with either an existing run configuration name, or with `filePath` + `line`.\nWhen using `filePath` + `line`, a line with a runnable method such as `main`, a test, or another executable\nentry point will almost always work. If you are unsure which line to use, `get_run_configurations`\ncan help discover runnable locations in the file.\nThe session will be started and you can then use other debugger tools to control execution.\n\nPreconditions:\n- When using `configurationName`, pass the exact existing run configuration name; do not pass a test method name or other derived target identifier.\n- When using `filePath` + `line`, point at a runnable code location such as `main`, a test, or another executable entry point.\n- Set at least one breakpoint first; otherwise the program may run to completion without pausing.\n- Pass either `configurationName`, or `filePath` together with `line`. These modes are mutually exclusive.\n\nBehavior:\n- Waits for session creation up to `timeout`.\n- Applies a grace wait (`graceWaitMs`) after the session starts and returns refreshed state.\n- Optional launch overrides (`programArguments`, `workingDirectory`, `envs`) are applied only for this debug launch and are not persisted.\n- `get_run_configurations` is the source of truth for override support: only pass launch overrides when the selected run configuration reports `supportsDynamicLaunchOverrides=true`.\n- Do not pass these override parameters unless you explicitly need to change the configured launch values for this debug launch.\n- Missing/null override parameters keep existing run configuration values unchanged.\n- For string overrides (`programArguments`, `workingDirectory`), missing/null or empty string (`\"\"`) keeps the existing value unchanged.\n- Pass a whitespace-only string such as `\" \"` to clear an existing value for this debug launch.\n\nNext call:\n- `xdebug_control_session(action=WAIT_FOR_PAUSE)` to wait for first suspension.\n- After pause, call `xdebug_get_stack` and `xdebug_get_frame_values` (or `xdebug_evaluate_expression`) for runtime evidence.\n\nReturns a flat result with debugger session metadata plus the execution snapshot fields from the launch:\n- `sessionId`, `name`, `status`, and optional `runConfigurationName`\n- `output` preview and optional `fullOutputPath`\n- optional `exitCode` when process termination is already known",
+   "inputSchema": {
+    "properties": {
+     "configurationName": {
+      "type": "string",
+      "description": "Name of the existing run configuration to debug."
+     },
+     "filePath": {
+      "type": "string",
+      "description": "File path relative to the project root. Provide together with `line` to start debugging from a code location."
+     },
+     "line": {
+      "type": "integer",
+      "description": "1-based line number for `filePath`. Provide together with `filePath` and do not combine with `configurationName`."
+     },
+     "timeout": {
+      "type": "integer",
+      "description": "Timeout in milliseconds to wait for the debug session to start. Default: 60000."
+     },
+     "graceWaitMs": {
+      "type": "integer",
+      "description": "Grace wait in milliseconds after session starts to refresh state. Default: 2000."
+     },
+     "programArguments": {
+      "type": "string",
+      "description": "Optional program arguments override for this launch only. Pass this only when the selected run configuration reports `supportsDynamicLaunchOverrides=true` in `get_run_configurations`. Missing/null or empty string keeps the existing value; whitespace-only string clears it."
+     },
+     "workingDirectory": {
+      "type": "string",
+      "description": "Optional working directory override for this launch only. Pass this only when the selected run configuration reports `supportsDynamicLaunchOverrides=true` in `get_run_configurations`. Missing/null or empty string keeps the existing value; whitespace-only string clears it."
+     },
+     "envs": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "Optional environment variable overrides for this launch only. Pass this only when the selected run configuration reports `supportsDynamicLaunchOverrides=true` in `get_run_configurations`. Missing/null keeps existing env unchanged; when provided, values are merged over existing env."
+     }
+    },
+    "required": [],
+    "type": "object"
+   },
+   "outputSchema": {
+    "properties": {
+     "sessionId": {
+      "type": "string",
+      "description": "Session identifier to use as `sessionId` in subsequent debugger calls. Uses session name by default; if duplicate names exist, format is `<sessionName>#<executionId>`."
+     },
+     "name": {
+      "type": "string",
+      "description": "Human-readable session name."
+     },
+     "state": {
+      "type": "string",
+      "enum": [
+       "running",
+       "paused",
+       "stopped"
+      ],
+      "description": "Current session state."
+     },
+     "runConfigurationName": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Associated run configuration name, if available."
+     },
+     "breakpointsMuted": {
+      "type": "boolean",
+      "description": "Whether breakpoints are globally muted for this debugger session."
+     },
+     "exitCode": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Process exit code. Absent when the tool returns before observing process termination, for example when the debuggee continues running after the session starts."
+     },
+     "output": {
+      "type": "string",
+      "description": "Captured process output snapshot. When additional output exists, `<truncated>` is appended to the preview."
+     },
+     "fullOutputPath": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Path to a temp file containing the full raw output. The file may continue growing while the process is still running and remains available while the IDE is running."
+     }
+    },
+    "required": [
+     "sessionId",
+     "name",
+     "state",
+     "output"
+    ],
+    "type": "object"
+   }
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+/* What Tailwind's utilities don't say: the log explorer's few rules of its own. */
+html { color-scheme: dark; }
+summary::-webkit-details-marker { color: #64748b; }
+pre { tab-size: 2; }

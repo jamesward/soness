@@ -1,12 +1,12 @@
 {
-  "mcpServers": {
-    "sbt-mcp-jevness": {
-      "type": "stdio",
-      "command": "bash",
-      "args": [
-        ".claude/sbt-mcp-stdio.sh"
+  "mcpServers" : {
+    "sbta" : {
+      "type" : "stdio",
+      "command" : "./sbta",
+      "args" : [
+        "--mcp"
       ],
-      "timeout": 1800000
+      "timeout" : 1800000
     }
   }
 }

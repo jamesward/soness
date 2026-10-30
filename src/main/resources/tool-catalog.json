@@ -1,0 +1,278 @@
+{
+  "about": "Which required capabilities each known tool covers, by the family of its source (TOOLS_SPEC.md). A family is matched by its server's serverInfo name or endpoint name; soness's own tools are the acp, local and builtin families. Unknown tools cover nothing and are offered as extras. A family's groups tier its tools when a session has many (zio-typesafe-ai's ToolGroup): a grouped tool is offered as its group until the decision model opens it; the ungrouped ones (what most requests need) are always offered.",
+  "families": {
+    "intellij": {
+      "serverInfoSuffix": " MCP Server",
+      "tools": {
+        "read_file": [
+          "FileRead"
+        ],
+        "create_new_file": [
+          "FileWrite"
+        ],
+        "apply_patch": [
+          "FilePatch"
+        ],
+        "search_file": [
+          "FileFind"
+        ],
+        "list_directory_tree": [
+          "FileFind"
+        ],
+        "search_text": [
+          "TextSearch"
+        ],
+        "search_regex": [
+          "TextSearch"
+        ],
+        "build_project": [
+          "Build"
+        ],
+        "get_file_problems": [
+          "Build"
+        ]
+      },
+      "shells": [
+        "execute_terminal_command"
+      ],
+      "groups": [
+        {
+          "name": "IDE code intelligence",
+          "description": "Call hierarchies, rename refactoring, reformatting and linting, PSI trees, threading and lock analysis: deeper code work than reading and searching.",
+          "tools": [
+            "analyze_calls",
+            "rename_refactoring",
+            "reformat_file",
+            "lint_files",
+            "generate_psi_tree",
+            "find_lock_requirements_usages",
+            "find_threading_requirements_usages"
+          ]
+        },
+        {
+          "name": "IDE editor and session",
+          "description": "What the user has open in the IDE, opening a file for the user to see, the chat session's title.",
+          "tools": [
+            "get_all_open_file_paths",
+            "open_file_in_editor",
+            "air_set_session_title"
+          ]
+        },
+        {
+          "name": "IDE project structure",
+          "description": "The project's modules, dependencies, repositories and VCS status, creating modules, Python interpreters and environments.",
+          "tools": [
+            "get_project_dependencies",
+            "get_project_modules",
+            "get_repositories",
+            "git_status",
+            "create_ij_module",
+            "recognize_ij_module_kind",
+            "configure_python_interpreter",
+            "get_python_environment"
+          ]
+        },
+        {
+          "name": "IDE run configurations",
+          "description": "The IDE's run configurations: list them and run one.",
+          "tools": [
+            "get_run_configurations",
+            "execute_run_configuration"
+          ]
+        },
+        {
+          "name": "IDE debugger",
+          "description": "Debug sessions: start one, breakpoints, stepping and running to a line, stacks, threads, frame values, expressions, memory and registers.",
+          "tools": [
+            "xdebug_start_debugger_session",
+            "xdebug_control_session",
+            "xdebug_get_debugger_status",
+            "xdebug_set_breakpoint",
+            "xdebug_remove_breakpoint",
+            "xdebug_list_breakpoints",
+            "xdebug_run_to_line",
+            "xdebug_get_stack",
+            "xdebug_get_threads",
+            "xdebug_get_frame_values",
+            "xdebug_get_value_by_path",
+            "xdebug_evaluate_expression",
+            "xdebug_set_variable",
+            "xdebug_disassemble",
+            "xdebug_read_memory",
+            "xdebug_get_registers"
+          ]
+        },
+        {
+          "name": "IDE databases",
+          "description": "Database connections, schemas and objects, SQL queries and their results, table previews.",
+          "tools": [
+            "list_database_connections",
+            "create_database_connection",
+            "edit_database_connection",
+            "test_database_connection",
+            "list_database_schemas",
+            "list_schema_object_kinds",
+            "list_schema_objects",
+            "get_database_object_description",
+            "introspect_schema",
+            "execute_sql_query",
+            "fetch_query_result",
+            "cancel_sql_query",
+            "list_recent_sql_queries",
+            "preview_table_data"
+          ]
+        },
+        {
+          "name": "IDE inspection scripts",
+          "description": "Writing and running IntelliJ inspection scripts (inspection.kts): their API, examples, validation and runs.",
+          "tools": [
+            "generate_inspection_kts_api",
+            "generate_inspection_kts_examples",
+            "run_inspection_kts",
+            "validate_inspection_kts"
+          ]
+        }
+      ]
+    },
+    "sbta": {
+      "names": [
+        "sbta",
+        "sbt-mcp"
+      ],
+      "tools": {
+        "check": [
+          "Build"
+        ],
+        "compile": [
+          "Build"
+        ],
+        "test": [
+          "Build"
+        ]
+      },
+      "shells": [],
+      "groups": [
+        {
+          "name": "sbt build details",
+          "description": "The build's projects, tasks, settings and dependencies, test and main class names, any sbt command, run, clean, publish-local, updating sbta.",
+          "tools": [
+            "sbt-task",
+            "list-tasks",
+            "projects",
+            "test-names",
+            "main-classes",
+            "dependencies",
+            "show",
+            "run",
+            "clean",
+            "publish-local",
+            "update-sbta"
+          ]
+        },
+        {
+          "name": "Scala symbols",
+          "description": "Find Scala 3 symbols by name in the build, inspect a symbol's members and signatures, find where it's defined.",
+          "tools": [
+            "glob-search",
+            "inspect",
+            "symbol-location"
+          ]
+        },
+        {
+          "name": "library docs (javadocs.dev)",
+          "description": "Maven Central libraries: latest versions, artifacts by name or class, their Javadoc/Scaladoc and source files.",
+          "tools": [
+            "get_latest_version",
+            "get_javadoc_index",
+            "list_javadoc_symbols",
+            "get_javadoc_symbol",
+            "get_source_file",
+            "list_source_files",
+            "search_artifacts",
+            "symbol_to_artifact"
+          ]
+        }
+      ]
+    },
+    "acp": {
+      "tools": {
+        "read_text_file": [
+          "FileRead"
+        ],
+        "write_text_file": [
+          "FileWrite"
+        ],
+        "edit_text_file": [
+          "FilePatch"
+        ]
+      },
+      "shells": [
+        "run_terminal_command"
+      ]
+    },
+    "local": {
+      "tools": {
+        "read_file": [
+          "FileRead"
+        ],
+        "write_file": [
+          "FileWrite"
+        ],
+        "edit_file": [
+          "FilePatch"
+        ],
+        "list_files": [
+          "FileFind"
+        ],
+        "search_text": [
+          "TextSearch"
+        ]
+      },
+      "shells": [
+        "run_command"
+      ]
+    },
+    "kiro": {
+      "about": "Kiro's built-in tools (kiro-cli acp): run by Kiro's own loop, not by soness; soness enables the ones a writing session needs through its agent config",
+      "tools": {
+        "read": [
+          "FileRead"
+        ],
+        "write": [
+          "FileWrite",
+          "FilePatch"
+        ],
+        "glob": [
+          "FileFind"
+        ],
+        "grep": [
+          "TextSearch"
+        ],
+        "web_search": [
+          "WebSearch"
+        ],
+        "web_fetch": [
+          "WebFetch"
+        ],
+        "code": [],
+        "use_aws": [],
+        "knowledge": [],
+        "todo_list": [],
+        "subagent": [],
+        "goal": [],
+        "introspect": []
+      },
+      "shells": [
+        "shell"
+      ]
+    },
+    "builtin": {
+      "tools": {
+        "web_fetch": [
+          "WebFetch"
+        ]
+      },
+      "shells": []
+    }
+  }
+}

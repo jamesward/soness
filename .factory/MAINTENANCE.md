@@ -34,19 +34,19 @@ reply is the report.
 
    Maven Central can rate-limit cloud sessions (HTTP 429); the retries cover that. Set every pin
    to the version it prints.
-2. Extract the Skills to `.kiro/skills/`:
-   - sbt: `extractSkillsJars` through the sbt-mcp `sbt-task` tool, or `./sbt extractSkillsJars`.
+2. Extract the Skills to `.agents/skills/`:
+   - sbt: `extractSkillsJars` through the sbt-mcp `sbt-task` tool, or `./sbta extractSkillsJars`.
      After `build.sbt` changes, sbt reloads and restarts the sbt-mcp server. The first `sbt-task`
-     call afterwards can report a lost connection; run it again rather than switching to `./sbt`.
+     call afterwards can report a lost connection; run it again rather than switching to `./sbta`.
    - Maven: `./mvnw -q skillsjars:extract`
    - Gradle: `./gradlew extractSkillsJars`
 
-   `.kiro/skills/` is gitignored, so it doesn't exist until this runs. If the build can't download
+   `.agents/skills/` is gitignored, so it doesn't exist until this runs. If the build can't download
    artifacts, quote the exact error; don't guess at a cause such as a rate limit. A "Not found" for a
    version released in the last day means it hasn't reached every mirror yet: pin the newest version
    that does resolve, continue, and say so in the report. For any other download error (for example
    HTTP 429 or a proxy 403), stop and report it instead of changing resolvers.
-3. Read `.kiro/skills/*zen-of-projects*/SKILL.md` and follow its "Maintenance Routine" section, using
+3. Read `.agents/skills/*zen-of-projects*/SKILL.md` and follow its "Maintenance Routine" section, using
    `AGENTS.md` for this project's commands and documented exceptions. While an unreleased version of
    the Skill is being tested, `.factory/skills/zen-of-projects/SKILL.md` exists. Read that file
    instead, and don't delete it.

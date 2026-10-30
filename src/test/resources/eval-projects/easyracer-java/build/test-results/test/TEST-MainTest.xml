@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="MainTest" tests="1" skipped="0" failures="1" errors="0" timestamp="2026-10-18T01:48:43.879Z" hostname="nixos" time="3.999">
+  <properties/>
+  <testcase name="scenario1()" classname="MainTest" time="0.051">
+    <failure message="java.lang.UnsupportedOperationException: scenario 1 is not implemented yet" type="java.lang.UnsupportedOperationException">java.lang.UnsupportedOperationException: scenario 1 is not implemented yet
+	at Main$Scenarios.scenario1(Main.java:15)
+	at MainTest.scenario1(MainTest.java:46)
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

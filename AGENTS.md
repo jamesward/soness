@@ -21,17 +21,10 @@ facts and exceptions.
 
 - sbt-reload only for the log explorer (test code, `~Test/runReload`): soness itself speaks ACP over stdio, not HTTP,
   so there is nothing to reload in place.
-- zio-evals (tests only) is a source dependency on `../zio-evals` too, for its ACP `AgentLoop`; `.sbtopts` sets
-  `-Dlocal` so zio-evals uses the sibling zio-decisions rather than a published one.
-- zio-acp, zio-bedrock, zio-http-mcp and zio-decisions are source dependencies on sibling checkouts
-  (`RootProject(file("../…"))` in `build.sbt`) while their changes are unreleased: in zio-acp, `"type":"stdio"` MCP
-  servers, the subprocess transport's shutdown and debug logging of every message; in zio-bedrock, no tool
-  configuration for a request without tools, and structured output against a runtime JSON Schema (on Mantle as a forced function call)
-  (`Request.asJsonObject`); in zio-http-mcp, the stdio client transport (`McpClient.connectStdio`); in
-  zio-decisions, the whole library (unpublished), with `orchestration.AgentLoop`. Replace them with the released artifacts once published; CI can't
-  build this project until then.
-- After a `build.sbt` change, the zio-acp classes under `target/out/jvm/scala-3.10.0/zio-acp` have been left
-  incomplete, which shows as `Not found: AcpAgent`; delete that directory and compile again.
+- zio-acp, zio-bedrock, zio-http-mcp, zio-decisions and (tests only) zio-evals are released artifacts. To change one
+  of them and soness together, `./sbta -Dlocal …` (after `./sbta shutdown`) builds against the sibling checkouts
+  `../zio-acp`, `../zio-bedrock`, `../zio-http-mcp`, `../zio-decisions` and `../zio-evals` instead. Never commit it
+  enabled. After switching, delete `target/out/jvm/scala-3.10.0/zio-*` if a sibling's classes show as `Not found`.
 - `src/test/scala/com/jamesward/zio_decisions/typesafe/FakeJev.scala` (and `JevDecisionEvalSpec`) are in
   zio-decisions' `typesafe` package because `FakeJev` is a `TypeSafe.Transport`, which with its wire types is
   package-private there.
@@ -52,12 +45,7 @@ facts and exceptions.
   lookups are the proxied javadocs.dev tools of the same server.
 - The `sbta` server is registered for Kiro in `.kiro/settings/mcp.json` and in `.mcp.json` (Claude Code, and soness
   itself, which loads a project's `.mcp.json`: soness builds soness through it); `./sbta --mcp --setup <client>` adds
-  it for others; it needs macOS or Linux. The older `sbt-mcp-soness` server stays registered alongside it:
-  every client reaches that one through the stdio launcher `.sbt-mcp/SbtMcpStdio.java` (Kiro:
-  `.kiro/settings/mcp.json`; Claude Code: `.mcp.json`, approved in `.claude/settings.json`, tools deferred: load them
-  with ToolSearch, search `sbt-mcp-soness`). It starts sbt (`sbt --client`) when it isn't running. Re-run
-  `mcpInstallStdio` after upgrading sbt-mcp and commit `.sbt-mcp/`. Diagnostics: `project/target/sbt-mcp/stdio.log`
-  and `project/target/sbt-mcp/boot.log`.
+  it for others; it needs macOS or Linux.
 - Commands (CLI fallback form):
   - `./sbta "Test / compile; testFull; stage"` — full validation (what CI runs).
   - `./sbta "testOnly *HarnessSpec"` — a single spec.
@@ -153,7 +141,10 @@ agents do, through `idea stdioMcpServer` with `IJ_MCP_SERVER_PORT` and `IJ_MCP_S
     1. it changes code, not only comments, and adds a test;
     2. the offline `testFull` passes (through this checkout's own sbt server);
     3. the quick eval doesn't regress against the baseline (unless `eval` is false).
-    Each round's starting files, patch, outputs and verdict are in `target/improve/`.
+    Each round's request, change, outputs and verdict are in `target/improve/`. Everything works on the files live,
+    in place: no copies, worktrees or branches, nothing set aside, put back or reverted. A round's change is its own
+    task's edits, read from the project's event log (`FileChanged`), so others' edits to the same files meanwhile
+    aren't counted as its.
 - A goal, then soness improving itself from how it went (`com.jamesward.soness.dev.GoalRun`, no editor):
   `./sbta Test/stage`, then `target/out/jvm/scala-3.10.0/soness/test-stage/bin/soness-goal [--project <dir>]
   [--rounds <n>] [--no-improve] [--eval] [--allow] <goal…>`. soness runs in that process (its ACP agent driven in
@@ -163,8 +154,30 @@ agents do, through `idea stdioMcpServer` with `IJ_MCP_SERVER_PORT` and `IJ_MCP_S
   time and tokens, tool time, how much ran at once, failures, repeats), and the decision model judges whether the
   goal was done. Then each round prompts soness on this project (and its source dependencies) to make the one change
   that best serves, in order: the goal accomplished, alignment with DESIGN.md, token efficiency, time efficiency;
-  `Improve.Local`'s gates judge it as they do self-improvement's. Run it outside sbt (`Test/runMain` would hold the
+  `Improve.Local`'s gates judge it as they do self-improvement's. The rounds work on the files as the goal left
+  them (finished or not), building on its edits; the goal's change is recorded in `goal.patch` from its edits in the
+  event log. Run it outside sbt (`Test/runMain` would hold the
   sbt server the gates and the round's build use). Its record (goal, telemetry, transcript, each round's verdict) is
   in `target/goal-runs/<stamp>/`; the changes take effect once soness is staged again. `GoalRunSpec` checks it.
+- Concurrent work is the norm, not a mode: there's no setting that turns coordination off, and its cost is
+  accepted. Coordination between concurrent tasks is push-based: the project's event log is the bus (`Workspace.follow`,
+  zio-decisions' `Notices`), loops' interests are what their calls name, and an edit from a stale read fails fast
+  (`Workspace.Stale`). To measure it: `NoticeJudgeEvalSpec` (seconds, the judgment alone) and
+  `CoordinationEvalSpec` (two sessions on one file; only with `SONESS_EVAL_COORDINATION=true`, a few minutes a
+  sample; records in
+  `target/evals/coordination.jsonl`). Both need only a decision model's key and a writer (OpenAI and Kiro do).
+- Kiro's writing latency: `scripts/kiro-timing.py <debug log>` splits a run's Kiro writings into time to Kiro's
+  first update, reasoning, answer streaming and the turn's end; `KiroLatencySpec` (only with
+  `SONESS_EVAL_KIRO_LATENCY=true`, about 2 minutes; `SONESS_KIRO_ARMS`, default `opus,sonnet,haiku,opus-low`) measures
+  Kiro's spin-up (launch, `initialize`, `session/new`, `set_mode`) and small and large writings per model and effort.
+- What the writer's prompts carry (`WritingPrompts`: no agent instructions; the last 2 steps' results to 20,000
+  characters, older ones to 4,000) was chosen with `WritingContextEvalSpec`: real writings
+  (`scripts/capture-writings.py <out.jsonl> <log>...`, into `target/writings/writings.jsonl`; they hold the run's code,
+  so they stay out of git) replayed through Kiro whole and with parts cut, each answer judged by the decision model
+  (`full2`, the whole prompt again, is the noise). Only with `SONESS_EVAL_WRITING_CONTEXT=true`, about 30 minutes;
+  records in `target/evals/writing-context.jsonl`.
+- File tasks outside the sources (logs, build output, test reports) are the file tools' (`list_directory`, `read_file`'s
+  `tail`, `search_text`'s `count`), not the shell's: `FileToolsEvalSpec` (only with `SONESS_EVAL_FILE_TOOLS=true`, a few
+  minutes; records in `target/evals/file-tools.jsonl`) checks each task's answer and counts the shell calls it made.
 - A live failure is a real result: report the verdicts and each model's latency and token numbers rather than treating
   it as noise or a reason to skip validation.

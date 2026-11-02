@@ -51,37 +51,22 @@ final case class ModelUsage(
 final case class HarnessResult(answer: String, usage: ModelUsage, ending: String = "answered")
 
 /**
- * How the harness works on a prompt. Users don't choose it: sessions run in the catalog's default mode, `Auto` unless
- * `SONESS_MODE` sets another (for tests and evals). `Single` is one agent loop; `Parallel` splits a request made of
- * independent parts and works on them at the same time (zio-decisions' `ParallelLoop`), and is one loop for a
- * request that isn't.
- */
-enum HarnessMode(val id: String, val title: String, val description: String) derives CanEqual:
-  case Auto extends HarnessMode("auto", "Auto",
-    "Jev decides per request: one agent loop, or, for a request made of independent parts, agents working on them at the same time")
-  case Single extends HarnessMode("single", "Single", "One agent loop works through the request, step by step")
-  case Parallel extends HarnessMode("parallel", "Parallel",
-    "A request made of independent parts is split, and agents work on the parts at the same time")
-
-object HarnessMode:
-  def of(id: String): Option[HarnessMode] = values.find(_.id == id)
-
-/**
  * Answers one prompt with the session's tools, the documents (skills) it can read, and what's known about the project
- * the session is in (`context`, [[ProjectContext]]), in the session's mode.
+ * the session is in (`context`, [[ProjectContext]]). What can run in parallel does: a request made of independent parts
+ * is split and its parts worked on at the same time (zio-decisions' `ParallelLoop`); a request that isn't is one loop.
  */
 trait Harness:
   /** `steering` is read again as the work goes on: the user's messages about this task since it started. */
   def run(prompt: String, toolset: Toolset, documents: Seq[Document] = Nil, context: Option[String] = None,
-      mode: HarnessMode = HarnessMode.Auto, steering: UIO[List[String]] = ZIO.succeed(Nil)): Task[HarnessResult]
+      steering: UIO[List[String]] = ZIO.succeed(Nil)): Task[HarnessResult]
 
   /**
    * [[run]], with `shared` too: what the project's other sessions are doing ([[Workspace.view]]), read again as the work
    * goes on, for the context of every decision and writing; by default left out.
    */
-  def runInProject(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+  def runInProject(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
       steering: UIO[List[String]], shared: UIO[com.jamesward.zio_decisions.orchestration.Sections]): Task[HarnessResult] =
-    run(prompt, toolset, documents, context, mode, steering)
+    run(prompt, toolset, documents, context, steering)
 
   /** What a message that arrives while tasks run is: by default, a new task. */
   def route(message: String, running: List[Interjection.Running], context: Option[String],
@@ -135,7 +120,7 @@ object Harness:
  * decision or search choices: the model picks its harness.
  */
 final case class HarnessCatalog private (models: List[String], defaultModel: String, private val harnesses: Map[String, Harness],
-    defaultMode: HarnessMode, decisions: List[HarnessCatalog.Choice] = Nil, searches: List[HarnessCatalog.Choice] = Nil,
+    decisions: List[HarnessCatalog.Choice] = Nil, searches: List[HarnessCatalog.Choice] = Nil,
     default: HarnessCatalog.Selection, unavailableModels: List[HarnessCatalog.Choice] = Nil,
     private val compose: Option[HarnessCatalog.Selection => Option[Harness]] = None):
   /** The model's harness, with the default decision model and search. */
@@ -161,17 +146,17 @@ object HarnessCatalog:
   final case class Selection(decision: Option[String], model: String, search: Option[String]) derives CanEqual
 
   /** The models, in order, with their harnesses; `defaultModel` must be among them. */
-  def make(models: List[(String, Harness)], defaultModel: String, defaultMode: HarnessMode = HarnessMode.Auto): Either[String, HarnessCatalog] =
+  def make(models: List[(String, Harness)], defaultModel: String): Either[String, HarnessCatalog] =
     if models.isEmpty then Left("no model is available")
     else if !models.exists(_._1 == defaultModel) then Left(s"model $defaultModel is unavailable")
-    else Right(HarnessCatalog(models.map(_._1), defaultModel, models.toMap, defaultMode, default = Selection(None, defaultModel, None)))
+    else Right(HarnessCatalog(models.map(_._1), defaultModel, models.toMap, default = Selection(None, defaultModel, None)))
 
   /**
    * The real providers' catalog: `harness` composes a selection's decision model, writer and search; `default` is
    * what a new session starts with.
    */
   def composed(models: List[String], decisions: List[Choice], searches: List[Choice], default: Selection,
-      defaultMode: HarnessMode, unavailableModels: List[Choice] = Nil)(harness: Selection => Option[Harness]): Either[String, HarnessCatalog] =
+      unavailableModels: List[Choice] = Nil)(harness: Selection => Option[Harness]): Either[String, HarnessCatalog] =
     if models.isEmpty then Left("no model is available")
     else if !decisions.exists(_.available) then Left("no decision model is available")
-    else Right(HarnessCatalog(models, default.model, Map.empty, defaultMode, decisions, searches, default, unavailableModels, Some(harness)))
+    else Right(HarnessCatalog(models, default.model, Map.empty, decisions, searches, default, unavailableModels, Some(harness)))

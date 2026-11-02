@@ -4,7 +4,7 @@ import com.jamesward.zio_bedrock.{Bedrock, Converse, ConverseConfig, Mantle, Man
 import com.jamesward.zio_bedrock.BedrockMiddleware.@@
 import com.jamesward.zio_bedrock.Bedrock.{ApiKey, InferenceConfig, Message, ModelId, Region, RequestConfig}
 import com.jamesward.zio_decisions.Decisions
-import com.jamesward.zio_decisions.orchestration.AgentLoop
+import com.jamesward.zio_decisions.orchestration.{AgentLoop, Notices}
 import com.jamesward.zioacp.*
 import zio.*
 import zio.http.{Client, URL, ZClient}
@@ -74,6 +74,13 @@ object Soness:
   /** Calls between the decision model's reviews of whether the loop's work is moving forward. */
   val DefaultReviewEvery = 12
 
+  /**
+   * What a loop does with other tasks' work that bears on its own: work is concurrent (sessions, their tasks, a plan's
+   * parts), so every loop hears it, the decision model judges it, and what makes the loop's work out of date is marked
+   * so for its next decision. No setting turns it off.
+   */
+  val Coordination: Notices.Policy = Notices.Policy.Judge
+
   /** The tools that only explore: reading, searching, fetching, by their kind. */
   val explores: AgentLoop.Tool => Boolean = t =>
     Set(com.jamesward.zioacp.schema.ToolKind.Read, com.jamesward.zioacp.schema.ToolKind.Search, com.jamesward.zioacp.schema.ToolKind.Fetch)
@@ -142,10 +149,8 @@ object Soness:
                      // an edit, a deletion, a move: what a check after it shows works or doesn't
                      changes = t => Set(com.jamesward.zioacp.schema.ToolKind.Edit, com.jamesward.zioacp.schema.ToolKind.Delete,
                        com.jamesward.zioacp.schema.ToolKind.Move).contains(ToolCallView.kind(t.name, t.annotations)),
-                     maxParallel = parallel.getOrElse(com.jamesward.zio_decisions.orchestration.Work.DefaultParallelism))
-      // the mode every session runs in (not shown to users): `SONESS_MODE` sets it for tests and evals
-      mode      <- env("SONESS_MODE").flatMap(v => ZIO.foreach(v)(m => ZIO.fromOption(HarnessMode.of(m.trim))
-                     .orElseFail(s"SONESS_MODE must be one of ${HarnessMode.values.map(_.id).mkString(", ")}, not $m")))
+                     maxParallel = parallel.getOrElse(com.jamesward.zio_decisions.orchestration.Work.DefaultParallelism),
+                     notices = Coordination)
       // `SONESS_ESCALATION_MODEL`: the stronger model Jev can hand a stuck loop's writing to (one of the available ones)
       // one of the session models, or a model of its own (checked like them, not offered in the picker)
       escalate  <- env("SONESS_ESCALATION_MODEL").map(_.map(_.trim)).flatMap:
@@ -205,12 +210,11 @@ object Soness:
                           if id == SearchKiro then "install Kiro (kiro-cli, signed in or KIRO_API_KEY)"
                           else if id == SearchBrave then s"set ${BraveSearch.Variable}"
                           else "needs a Bedrock OpenAI GPT-5.4+ model on Mantle (SONESS_BEDROCK_API=mantle) in us-east-1, us-east-2 or us-west-2")),
-                     HarnessCatalog.Selection(Some(deciders.head.name), model, search), mode.getOrElse(HarnessMode.Auto),
+                     HarnessCatalog.Selection(Some(deciders.head.name), model, search),
                      Option.when(available.isEmpty)(HarnessCatalog.Choice("bedrock", "Bedrock (unavailable)", "A Bedrock model writes",
                        "Bedrock", Some("set AWS_BEARER_TOKEN_BEDROCK and BEDROCK_MODEL_ID"))).toList ++
                      Option.when(!agents.exists(_._1 == KiroAgent))(HarnessCatalog.Choice(s"${Provider.AcpPrefix}$KiroAgent", "Kiro (unavailable)",
                        "Kiro writes (an ACP agent)", "Kiro", Some("install Kiro (kiro-cli, signed in or KIRO_API_KEY)"))).toList)(harnesses.get))
-      _         <- ZIO.logInfo(s"default mode: ${catalog.defaultMode.id}")
     yield catalog
 
   /**

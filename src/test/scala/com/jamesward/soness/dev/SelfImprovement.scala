@@ -84,7 +84,7 @@ final class SelfImprovement(steps: Path => Improve.Steps = root => Improve.Local
       harness <- session.harness
       // its calls aren't the session's: unreported, so the client isn't shown them
       result  <- harness.run(Observer.request(turn), SelfImprovement.readOnly(session.toolset), Nil,
-                   Some(s"What the turn shows:\n${Transcript.render(turn, 12000)}"), HarnessMode.Single)
+                   Some(s"What the turn shows:\n${Transcript.render(turn, 12000)}"))
       at      <- Clock.instant.map(_.toString)
       finding  = Observer.Finding(at, session.id, turn.id, turn.request, turn.ending, p, Observer.summary(result.answer), result.answer)
       _       <- Observer.record(root, finding)
@@ -164,7 +164,8 @@ final class SelfImprovement(steps: Path => Improve.Steps = root => Improve.Local
           reply    = worked.toOption.map(_.answer)
           _       <- say(s"Round $n's work: ${worked.fold(e => s"it failed (${Option(e.getMessage).getOrElse(e.toString)})", _.answer)}")
           _       <- say(s"Round $n: checking the change (its gates).")
-          verdict <- step(s"round $n: gates")(here.gate(o, round))
+          // the round's change is its own edits: this background task's, in the project's event log
+          verdict <- step(s"round $n: gates")(here.gate(o, round, Improve.By(session.id, bg.id)))
           _       <- say(s"Round $n: ${verdict.describe}. Its record: ${round.out}")
           _       <- ZIO.logInfo(s"self-improvement round $n: ${verdict.describe} (${round.out})")
           line     = Improve.history(verdict, reply)
@@ -189,7 +190,7 @@ final class SelfImprovement(steps: Path => Improve.Steps = root => Improve.Local
       harness         <- session.harness
       context          = (findings.toList ++ known.toList).reduceOption(_ + "\n\n" + _)
       result          <- bg.loop(s"round-${round.round}")(harness.run(round.prompt, bg.reported(session.toolset), skills, context,
-                           HarnessMode.Single, bg.steering))
+                           bg.steering))
     yield result
 
 object SelfImprovement:

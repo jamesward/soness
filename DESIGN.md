@@ -8,7 +8,9 @@
 - Tool Calls / Processes don't block & don't poll
 - Parellize everything possible
 - Don't wait around for something to finish, figure out what to do while you're waiting
-- Coordinate across all concurrent surfaces (worktrees are an anti-pattern)
+- Assume work is concurrent: users (and the AIs working for them) run sessions, tasks and sub-tasks in parallel on the same live files. Coordination is always on, never a mode or a flag, and its overhead is the price of correctness.
+- Coordinate across all concurrent surfaces (worktrees are an anti-pattern). Work in place on the live filesystem: no copies, branches, set-asides or reverts; build on each other's changes.
+- Coordination is push, not pull: what one task does that bears on another (an edit of a file it read, a check that broke) is told to it as it happens, from the event log, and System One judges whether it changes the work in flight.
 - Decide with tools instead of script (code mode is an anti-pattern)
 - Memoize tool output (in the event log) and don't re-run things when we can instead filter / search in the results of a previous tool run
 - Let the user prompt to redirect, add / change goals, etc (Esc is an anti-pattern)

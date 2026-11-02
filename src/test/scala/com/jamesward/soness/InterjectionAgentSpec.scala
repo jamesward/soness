@@ -20,7 +20,7 @@ object InterjectionAgentSpec extends ZIOSpecDefault:
    */
   private final class Stub(gate: Promise[Nothing, Unit], started: Promise[Nothing, Unit], asked: Ref[Vector[List[Interjection.Running]]])
       extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       if prompt == "hangs" then
         started.succeed(()) *>
@@ -81,11 +81,16 @@ object InterjectionAgentSpec extends ZIOSpecDefault:
         work   <- prompt(agent, id, "work").fork
         _      <- started.await
         steer  <- prompt(agent, id, "steer use tabs")
+        // the task's goal in the process tree: its request, then the steering
+        before <- updates.get
+        _      <- prompt(agent, id, "/status")
+        status <- updates.get.map(_.drop(before.size)).map(text(_).mkString)
         _      <- gate.succeed(())
         done   <- work.join
         seen   <- asked.get
         all    <- updates.get
       yield assertTrue(
+        status.contains("goal now: work then, as the user steered: steer use tabs (the user steered it: steer use tabs)"),
         route(steer).contains("steer:1"),
         TurnMetrics.fromMeta(steer.meta).map(_.jevInputTokens).contains(40L),
         seen.head.map(_.request) == List("work"),

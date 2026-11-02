@@ -30,7 +30,7 @@ object SelfImprovementSpec extends ZIOSpecDefault:
    * M.txt. Judges a turn by its request; steers to the newest running task once the launcher has handed over.
    */
   private final class Fake(seen: Ref[Vector[Seen]]) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       val tools = toolset.tools.map(_.name).toList
       def read(path: String) = toolset.call("read_file", Json.Obj("path" -> Json.Str(path))).map(_.toString).catchAll(e => ZIO.succeed(s"FAILED ${e.getMessage}"))
@@ -63,7 +63,7 @@ object SelfImprovementSpec extends ZIOSpecDefault:
   private final class Steps(project: Path, calls: Ref[Vector[String]]) extends Improve.Steps:
     def prepare(o: Improve.Options, n: Int, log: Option[Path], history: List[String]): Task[Improve.Round] =
       calls.update(_ :+ s"prepare $n history=${history.size}").as(Improve.Round(n, project.resolve(s"r$n"), project, Improve.prompt(n, project, log, history)))
-    def gate(o: Improve.Options, round: Improve.Round): Task[Improve.Verdict] =
+    def gate(o: Improve.Options, round: Improve.Round, by: Improve.By): Task[Improve.Verdict] =
       calls.update(_ :+ s"gate ${round.round} eval=${o.eval}").as(Improve.Verdict("tests pass (no eval)", files = List("src/main/scala/A.scala")))
 
   private final class Updates(updates: Ref[Vector[SessionUpdate]]) extends com.jamesward.zioacp.Client:
@@ -92,7 +92,7 @@ object SelfImprovementSpec extends ZIOSpecDefault:
       updates <- Ref.make(Vector.empty[SessionUpdate])
       parent  <- ZIO.scope
       pipe    <- Transport.pipe
-      catalog  = HarnessCatalog.make(List("m" -> Fake(seen)), "m", HarnessMode.Single).toOption.get
+      catalog  = HarnessCatalog.make(List("m" -> Fake(seen)), "m").toOption.get
       _       <- AcpAgent.serve(pipe._1)(client =>
                    SonessAgent.make(client, http, catalog, parent, List(SelfImprovement(_ => Steps(dir, calls))))).forkScoped
       agent   <- AcpClient.connect(pipe._2, Updates(updates))
@@ -243,17 +243,32 @@ object SelfImprovementSpec extends ZIOSpecDefault:
           |-val x = 1
           |+val x = 2
           |""".stripMargin
-      val labelled = Improve.label(diff, Path.of("/m"), "soness")
+      // a task's changes, from the event log: the project's files relative, a source dependency's as <name>/…
+      def changed(file: String, patch: String) = new EventLog.Event.FileChanged("s", 1, "t", "c", file, patch)
+      val project = Path.of("/m/soness")
+      val dep     = Path.of("/m/zio-decisions")
+      val labelled = Improve.patchOf(List(
+        changed("/m/soness/src/main/scala/A.scala", EventLog.patchOf("src/main/scala/A.scala", Some("// old comment\n"), Some("// new comment\n"))),
+        changed("/m/soness/src/main/scala/B.scala", EventLog.patchOf("src/main/scala/B.scala", Some("val x = 1\n"), Some("val x = 2\n")))),
+        project, List(dep))
+      val ofDep = Improve.patchOf(List(changed("/m/zio-decisions/src/main/scala/L.scala",
+        EventLog.patchOf("/m/zio-decisions/src/main/scala/L.scala", Some("val a = 1\n"), Some("val a = 2\n")))), project, List(dep))
       val records = List(
         """{"label":"q","extra":{"parts":{"a":true,"b":false}}}""", """{"label":"q","extra":{"parts":{"c":true}}}""",
         """{"label":"other","extra":{"parts":{"d":true}}}""")
       assertTrue(
         Improve.changedFiles(labelled) == Map("src/main/scala/A.scala" -> false, "src/main/scala/B.scala" -> true),
-        labelled.contains("+++ soness-new/src/main/scala/B.scala"),
+        labelled.contains("+++ b/src/main/scala/B.scala"),
         // a source dependency's change counts: its files are <name>/src/…, main code and tests apart from the project's
-        Improve.changedFiles(Improve.labelDependency(
-          "--- zio-decisions/src/main/scala/L.scala\n+++ /p/zio-decisions/src/main/scala/L.scala\n@@ -1 +1 @@\n-val a = 1\n+val a = 2\n",
-          Path.of("/p/zio-decisions"))) == Map("zio-decisions/src/main/scala/L.scala" -> true),
+        Improve.changedFiles(ofDep) == Map("zio-decisions/src/main/scala/L.scala" -> true),
+        // a file edited twice, its last edit only a comment: still a code change
+        Improve.changedFiles(Improve.patchOf(List(
+          changed("/m/soness/src/main/scala/B.scala", EventLog.patchOf("x", Some("val x = 1\n"), Some("val x = 2\n"))),
+          changed("/m/soness/src/main/scala/B.scala", EventLog.patchOf("x", Some("// a\n"), Some("// b\n")))), project, List(dep)))
+          == Map("src/main/scala/B.scala" -> true),
+        // a new file's patch, and a deleted one's
+        EventLog.patchOf("N.scala", None, Some("a\nb\n")) == "--- /dev/null\n+++ b/N.scala\n@@ -0,0 +1,2 @@\n+a\n+b\n",
+        EventLog.patchOf("N.scala", Some("a\n"), None) == "--- a/N.scala\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-a\n",
         Improve.isMain("zio-decisions/src/main/scala/L.scala"), Improve.isMain("src/main/scala/A.scala"),
         !Improve.isMain("zio-decisions/src/test/scala/LSpec.scala"), Improve.isTest("zio-decisions/src/test/scala/LSpec.scala"),
         Improve.specNames("package a.b\n\nobject XSpec extends ZIOSpecDefault:\nobject Y\n") == List("a.b.XSpec"),

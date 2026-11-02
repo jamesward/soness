@@ -20,19 +20,19 @@ object ToolResolverSpec extends ZIOSpecDefault:
     "search_text", "get_file_problems", "build_project", "execute_terminal_command", "search_symbol")
   private val sbta = from(ToolSource.ProjectMcp, "sbta", "check", "compile", "test", "inspect")
   private val acp = from(ToolSource.AcpClient, "acp", "read_text_file", "write_text_file", "edit_text_file", "run_terminal_command")
-  private val local = from(ToolSource.Local, "local", "read_file", "list_files", "search_text", "edit_file", "write_file", "run_command")
+  private val local = from(ToolSource.Local, "local", "read_file", "list_directory", "list_files", "search_text", "edit_file", "write_file", "run_command")
   private val builtin = from(ToolSource.Builtin, "builtin", "web_fetch")
 
   private def names(r: ToolResolver.Resolution) = r.offered.map(_.name).toSet
   private def shells(r: ToolResolver.Resolution) = names(r).intersect(Set("run_command", "run_terminal_command"))
 
   def spec = suite("tool resolver")(
-    test("IntelliJ, sbta, ACP and soness's own: every MCP tool offered, no implicit file tool, no implicit shell; builds are sbta's") {
+    test("IntelliJ, sbta, ACP and soness's own: every MCP tool offered, no implicit file tool, no implicit shell (the IDE's covers Command); builds are sbta's") {
       val r = ToolResolver.resolve(intellij ++ sbta ++ acp ++ local ++ builtin)
       assertTrue(
         (intellij ++ sbta).map(_.name).toSet.subsetOf(names(r)),
         !names(r).exists(Set("read_text_file", "write_text_file", "edit_file", "write_file", "list_files")),
-        shells(r).isEmpty, r.fallback.isEmpty,
+        shells(r).isEmpty, r.fallback.isEmpty, r.coverage(Command).source == ToolSource.IntellijMcp,
         r.coverage(FileRead).source == ToolSource.IntellijMcp, r.coverage(Build).name == "check",
         r.coverage(WebFetch).name == "web_fetch", !r.coverage.contains(WebSearch),
         r.hidden.exists((t, why) => t.name == "read_text_file" && why.contains("read_file")),
@@ -42,25 +42,28 @@ object ToolResolverSpec extends ZIOSpecDefault:
       val r = ToolResolver.resolve(intellij)
       assertTrue(names(r) == intellij.map(_.name).toSet, r.fallback.isDefined == false)
     },
-    test("ACP fs and sbta: ACP's read, write and patch (through the editor), soness's find and search; no shell (sbta builds)") {
+    test("ACP fs and sbta: ACP's read, write and patch (through the editor), soness's find and search; a shell for running things (sbta builds)") {
       val r = ToolResolver.resolve(sbta ++ acp ++ local ++ builtin)
       assertTrue(
         r.coverage(FileRead).name == "read_text_file", r.coverage(FileWrite).name == "write_text_file",
         r.coverage(FilePatch).name == "edit_text_file", r.coverage(FileFind).name == "list_files",
         // one tool each: soness's own are hidden
-        !names(r)("write_file"), !names(r)("read_file"), !names(r)("edit_file"), shells(r).isEmpty,
+        !names(r)("write_file"), !names(r)("read_file"), !names(r)("edit_file"),
+        // sbta builds and tests; measuring, reproducing or reading logs takes running a command: the ACP client's terminal
+        shells(r) == Set("run_terminal_command"), r.fallback.contains(Set(Command)), r.coverage(Command).name == "run_terminal_command",
+        r.offered.find(_.name == "run_terminal_command").exists(_.spec.description.contains("measure")),
       )
     },
     test("ACP fs only: no build tool, so one shell stands in for Build, the ACP client's, saying so") {
       val r = ToolResolver.resolve(acp ++ local ++ builtin)
       val shell = r.offered.find(_.name == "run_terminal_command")
-      assertTrue(r.fallback.contains(Set(Build)), shells(r) == Set("run_terminal_command"),
+      assertTrue(r.fallback.contains(Set(Build, Command)), shells(r) == Set("run_terminal_command"),
         shell.exists(_.spec.description.contains("Build")))
     },
     test("nothing but soness's own: its file tools, web_fetch and run_command for the build") {
       val r = ToolResolver.resolve(local ++ builtin)
-      assertTrue(names(r) == Set("read_file", "list_files", "search_text", "edit_file", "write_file", "run_command", "web_fetch"),
-        r.fallback.contains(Set(Build)))
+      assertTrue(names(r) == Set("read_file", "list_directory", "list_files", "search_text", "edit_file", "write_file", "run_command", "web_fetch"),
+        r.fallback.contains(Set(Build, Command)))
     },
     test("a user MCP tool of the same name as one of soness's: the MCP tool is offered, soness's dropped; unknown MCP tools are extras") {
       val user = from(ToolSource.UserMcp, "mcp", "web_fetch", "list_orders")

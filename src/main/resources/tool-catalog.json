@@ -17,7 +17,7 @@
           "FileFind"
         ],
         "list_directory_tree": [
-          "FileFind"
+          "DirectoryList"
         ],
         "search_text": [
           "TextSearch"
@@ -214,6 +214,9 @@
       "tools": {
         "read_file": [
           "FileRead"
+        ],
+        "list_directory": [
+          "DirectoryList"
         ],
         "write_file": [
           "FileWrite"

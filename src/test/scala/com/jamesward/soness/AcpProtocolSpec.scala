@@ -18,7 +18,7 @@ object AcpProtocolSpec extends ZIOSpecDefault:
 
   /** A harness that makes the calls `script` lists, in order, and answers with their results. */
   private final class Calls(script: List[(String, Json.Obj)], gate: Option[Promise[Nothing, Unit]] = None) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       ZIO.foreach(script)((n, a) => toolset.call(n, a).either)
         .flatMap(rs => ZIO.foreachDiscard(gate)(_.await).as(rs))
@@ -49,7 +49,7 @@ object AcpProtocolSpec extends ZIOSpecDefault:
       _       <- exit.succeed(()).when(exitAtOnce)
       parent  <- ZIO.scope
       pipe    <- Transport.pipe
-      catalog  = HarnessCatalog.make(List("m" -> harness), "m", HarnessMode.Single).toOption.get
+      catalog  = HarnessCatalog.make(List("m" -> harness), "m").toOption.get
       _       <- AcpAgent.serve(pipe._1)(client => SonessAgent.make(client, http, catalog, parent)).forkScoped
       agent   <- AcpClient.connect(pipe._2, Recording(updates, asked, exit))
       init    <- agent.initialize(InitializeRequest(ProtocolVersion.V1, capabilities))
@@ -94,7 +94,12 @@ object AcpProtocolSpec extends ZIOSpecDefault:
         _      <- agent.prompt(PromptRequest(id, List(ContentBlock.text("go"))))
         us     <- updates.get
         done    = updated(us).find(_.status.contains(ToolCallStatus.Completed))
+        events <- EventLog.at(dir).read
       yield assertTrue(
+        // and in the project's event log, as the task's change: the file and its patch (what the task changed is read
+        // from there, not from a copy of the project)
+        EventLog.changes(events, id.value, 1).map(c => (c.file, c.patch)) == List((dir.resolve("src/B.java").toString,
+          "--- a/src/B.java\n+++ b/src/B.java\n@@ -2,1 +2,2 @@\n-  int x = 1;\n+  int x = 2;\n+  int y = 3;\n")),
         done.flatMap(_.content).contains(List(ToolCallContent.Diff(dir.resolve("src/B.java").toString, "class B {\n  int x = 2;\n  int y = 3;\n}\n",
           Some("class B {\n  int x = 1;\n}\n")))),
         done.flatMap(_.rawOutput).exists(_.toString.contains("src/B.java: +2 −1")),
@@ -161,7 +166,7 @@ object AcpProtocolSpec extends ZIOSpecDefault:
       for
         tools  <- Ref.make(Chunk.empty[String])
         h       = new Harness:
-                    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+                    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
                         steering: UIO[List[String]]): Task[HarnessResult] =
                       tools.set(toolset.tools.map(_.name)).as(HarnessResult("ok", ModelUsage()))
         (agent, id, _, _, _, _) <- setup(h, ClientCapabilities())
@@ -172,7 +177,7 @@ object AcpProtocolSpec extends ZIOSpecDefault:
     test("a harness's plan reaches the client as plan updates, every entry each time") {
       import com.jamesward.zio_decisions.orchestration.ParallelLoop.Progress
       val h = new Harness:
-        def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+        def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
             steering: UIO[List[String]]): Task[HarnessResult] =
           ClientTools.currentPlan.get.flatMap: report =>
             report(List("read" -> Progress.Completed, "part A" -> Progress.InProgress)) *>

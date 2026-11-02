@@ -276,10 +276,13 @@ object SharedToolsSpec extends ZIOSpecDefault:
                       all     <- ZIO.foreach(List(first, x, y))(_.join)
                     yield all
         runs   <- ran.get
-      yield assertTrue(
-        runs == Vector("a: ./gradlew test --tests first", "a: ./gradlew test --tests X --tests Y"),
-        out.drop(1).forall(r => inner(r) == Json.Str("a ran ./gradlew test --tests X --tests Y")),
-      )
+      yield
+        // the merged run is made through whichever waiting session's tools went first: either order is one run
+        val merged = Set("a: ./gradlew test --tests X --tests Y", "b: ./gradlew test --tests Y --tests X")
+        assertTrue(
+          runs.size == 2, runs.head == "a: ./gradlew test --tests first", merged(runs(1)),
+          out.drop(1).forall(r => inner(r) == Json.Str(runs(1).replaceFirst(": ", " ran "))),
+        )
     },
     test("two coordinators of one project (two soness processes) take turns at runs through the lock directory") {
       for

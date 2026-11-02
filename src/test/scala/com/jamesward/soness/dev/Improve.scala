@@ -1,6 +1,6 @@
 package com.jamesward.soness.dev
 
-import com.jamesward.soness.{LocalTools, SourceDependencies}
+import com.jamesward.soness.{EventLog, LocalTools, SourceDependencies}
 
 import zio.*
 import zio.json.*
@@ -15,9 +15,10 @@ import java.nio.file.{Files, Path}
  * (every round's loop reads it), asks how it's going, or stops it, as for any running task.
  *
  * What a round improves comes from the [[Observer]]'s findings (and a debug log, when one is given). A round's
- * [[Steps]] get it ready (a record of the project as it starts) and, once the session has worked on it, check what the
- * round changed ([[Local]]'s gates) and give the verdict. The round edits the project itself (and, where the fix is
- * theirs, its source dependencies): there's no copy to work in, and nothing to apply afterwards.
+ * [[Steps]] get it ready and, once the session has worked on it, check what the round changed ([[Local]]'s gates) and
+ * give the verdict. The round edits the project itself (and, where the fix is theirs, its source dependencies), live,
+ * alongside whatever else is working on them: there's no copy, nothing set aside, put back or undone. What it changed
+ * is its task's own edits, read from the project's event log.
  */
 object Improve:
 
@@ -38,15 +39,18 @@ object Improve:
 
   given JsonCodec[Path] = JsonCodec.string.transform(Path.of(_), _.toString)
 
+  /** The task that worked on a round: its session and its number there, whose edits are the round's change. */
+  final case class By(session: String, task: Int) derives CanEqual
+
   val NoChange = "no change"
 
   /** A round's two ends, around the session's work on the project. */
   trait Steps:
-    /** Round `n` ready to work on: the project as it starts recorded, with what earlier rounds did in its request. */
+    /** Round `n` ready to work on, with what earlier rounds did in its request. */
     def prepare(o: Options, n: Int, log: Option[Path], history: List[String]): Task[Round]
 
-    /** What the round changed, checked against the project as it started: the verdict. */
-    def gate(o: Options, round: Round): Task[Verdict]
+    /** What the round changed (the edits of the task `by` that worked on it), checked: the verdict. */
+    def gate(o: Options, round: Round, by: By): Task[Verdict]
 
   /** The options of a `self_improve` call: the log (relative to `root`), and the rounds and gates. */
   def options(arguments: Json.Obj, root: Option[Path]): Either[String, Options] =
@@ -84,10 +88,10 @@ object Improve:
 
   // ---------- the gates' pure parts ----------
 
-  /** What a round's patch covers. */
-  val Patched: List[String] = List("src", "README.md", "AGENTS.md", "scripts")
-
-  /** The files a patch changes, relative to the project, with whether any changed line is more than a comment. */
+  /**
+   * The files a patch changes, relative to the project, with whether any changed line is more than a comment: a file's
+   * blocks taken together (a task's patch from the event log has a block for each of its edits of a file).
+   */
   def changedFiles(diff: String): Map[String, Boolean] =
     val (files, _) = diff.linesIterator.foldLeft((Vector.empty[(String, Boolean)], Option.empty[String])):
       case ((acc, current), line) =>
@@ -100,23 +104,31 @@ object Improve:
                 body.nonEmpty && !List("//", "*", "/*", "#").exists(body.startsWith)
               }
             if code then (acc.map((f, real) => if current.contains(f) then f -> true else f -> real), current) else (acc, current)
-    files.toMap
+    files.groupMapReduce(_._1)(_._2)(_ || _)
 
   /** The ZIO specs (objects extending ZIOSpecDefault) in a test file's text, fully named. */
   def specNames(text: String): List[String] =
     val pkg = """(?m)^package (\S+)""".r.findFirstMatchIn(text).map(_.group(1))
     """(?m)^object (\w+) extends ZIOSpecDefault""".r.findAllMatchIn(text).map(m => pkg.fold(m.group(1))(p => s"$p.${m.group(1)}")).toList
 
-  /** A `diff -ruN` of `base/<name>` against the project, labelled `a/`-`b/` style (`patch -p1` applies it). */
-  def label(diff: String, project: Path, name: String): String =
-    diff.replace(s"+++ $project/", s"+++ $name-new/")
-
   /**
-   * A source dependency's `diff -ruN` of `base/deps/<name>` against its checkout, labelled so its files are
-   * `<name>/src/…` (a sibling checkout's, apart from the project's own `src/…`).
+   * A changed file as the gates name it: the project's relative path (`src/…`), a source dependency's `<name>/…`, or
+   * the absolute path of a file outside both.
    */
-  def labelDependency(diff: String, dependency: Path): String =
-    diff.replace(s"+++ $dependency/", s"+++ deps-new/${dependency.getFileName}/")
+  def relative(file: Path, project: Path, dependencies: List[Path]): String =
+    if file.startsWith(project) then project.relativize(file).toString
+    else dependencies.find(file.startsWith(_)).fold(file.toString)(d => s"${d.getFileName}/${d.relativize(file)}")
+
+  /** A task's changes (from the event log) as one patch: each file's changes in turn, its files named [[relative]]ly. */
+  def patchOf(changes: List[EventLog.Event.FileChanged], project: Path, dependencies: List[Path]): String =
+    changes.map: c =>
+      val name = relative(Path.of(c.file), project, dependencies)
+      c.patch.linesIterator.map:
+        case l if l.startsWith("--- a/") => s"--- a/$name"
+        case l if l.startsWith("+++ b/") => s"+++ b/$name"
+        case l => l
+      .mkString("", "\n", "\n")
+    .mkString
 
   /** Whether a changed file (the project's `src/main/…`, or a dependency's `<name>/src/main/…`) is main code. */
   def isMain(file: String): Boolean = file.startsWith("src/main/") || """[^/]+/src/main/.*""".r.matches(file)
@@ -141,11 +153,10 @@ object Improve:
   // ---------- the rounds on this machine ----------
 
   /**
-   * The rounds' steps on this machine, for the project at `root`, which the rounds edit directly: a round's record (the
-   * project's files as it started, its patch, outputs and verdict) is in `target/improve/<stamp>-r<n>/`.
+   * The rounds' steps on this machine, for the project at `root`, which the rounds edit directly: a round's record (its
+   * request, its change as its edits made it, outputs and verdict) is in `target/improve/<stamp>-r<n>/`.
    */
   final class Local(root: Path) extends Steps:
-    private val name = root.getFileName.toString
     private val Offline = "env -u TYPESAFE_API_KEY -u AWS_BEARER_TOKEN_BEDROCK -u BEDROCK_MODEL_ID"
 
     /** `command` by bash in `dir`: its exit code and output. */
@@ -154,10 +165,6 @@ object Improve:
         val o = json.asObject
         (o.flatMap(_.get("exit_code")).flatMap(_.asNumber).map(_.value.intValue).getOrElse(-1),
           o.flatMap(_.get("output")).flatMap(_.asString).getOrElse(""))
-
-    private def must(dir: Path, command: String, seconds: Int = 3600): Task[String] =
-      sh(dir, command, seconds).flatMap: (code, out) =>
-        if code == 0 then ZIO.succeed(out) else ZIO.fail(IllegalStateException(s"`$command` exited $code: ${out.takeRight(1500)}"))
 
     private def write(path: Path, text: String): Task[Unit] =
       ZIO.attemptBlocking { Files.createDirectories(path.getParent); Files.writeString(path, text, UTF_8) }.unit
@@ -180,31 +187,21 @@ object Improve:
       for
         stamp <- Clock.localDateTime.map(_.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")))
         out    = root.resolve("target").resolve("improve").resolve(s"$stamp-r$n")
-        // the project's files as the round starts: what its change is measured against (a record, not a workspace)
-        base   = out.resolve("base").resolve(name)
-        _     <- ZIO.attemptBlocking(Files.createDirectories(base))
-        _     <- ZIO.foreachDiscard(Patched)(p => must(root, s"[ ! -e ${quote(p)} ] || cp -r ${quote(p)} ${quote(base.toString)}/"))
-        // and its source dependencies' sources: a round may fix a cause that's theirs
-        _     <- ZIO.foreachDiscard(dependencies): d =>
-                   val to = out.resolve("base").resolve("deps").resolve(d.getFileName.toString)
-                   ZIO.attemptBlocking(Files.createDirectories(to)) *>
-                     must(d, s"[ ! -e src ] || cp -r src ${quote(to.toString)}/")
+        _     <- ZIO.attemptBlocking(Files.createDirectories(out))
         _     <- ZIO.foreachDiscard(log)(l => ZIO.attemptBlocking(Files.copy(l, out.resolve("evidence.log"))))
         round  = Round(n, out, root, prompt(n, root, log, history))
         _     <- write(out.resolve("round.json"), Json.Obj("round" -> Json.Num(n), "project" -> Json.Str(root.toString),
                    "prompt" -> Json.Str(round.prompt)).toJsonPretty)
       yield round
 
-    def gate(o: Options, round: Round): Task[Verdict] =
+    def gate(o: Options, round: Round, by: By): Task[Verdict] =
       val out = round.out
       def done(v: Verdict) = write(out.resolve("verdict.json"), v.toJsonPretty).as(v)
       for
-        diffs  <- ZIO.foreach(Patched.filter(p => Files.exists(root.resolve(p))))(p =>
-                    sh(out.resolve("base"), s"diff -ruN ${quote(s"$name/$p")} ${quote(root.resolve(p).toString)}").map(_._2))
-        depDiff <- ZIO.foreach(dependencies.filter(d => Files.isDirectory(out.resolve("base/deps").resolve(d.getFileName.toString).resolve("src")))): d =>
-                     sh(out.resolve("base/deps"), s"diff -ruN ${quote(s"${d.getFileName}/src")} ${quote(d.resolve("src").toString)}")
-                       .map(r => labelDependency(r._2, d))
-        diff    = label(diffs.mkString, root, name) + depDiff.mkString
+        // the round's change is its task's own edits, as the event log has them: not a diff against a copy, so what
+        // others change in the same files meanwhile isn't the round's
+        events <- EventLog.at(root).read
+        diff    = patchOf(EventLog.changes(events, by.session, by.task), root, dependencies)
         _      <- write(out.resolve("change.patch"), diff)
         files   = changedFiles(diff)
         code    = files.collect { case (f, true) if isMain(f) => f }.toList

@@ -149,8 +149,13 @@ object GoalRun extends ZIOAppDefault:
        |3. token efficiency: fewer and smaller decision-model and LLM requests for the same work (what's in their
        |   prompts and contexts that they don't need, requests that repeat);
        |4. time efficiency: independent calls run at the same time, nothing waits idle, no repeated or wasted calls.
-       |Change it, add or update a test that fails without the change, and run the relevant tests until they pass. Keep
+       |Change it, add or update a test that fails without the change (a source dependency's change, a test in that
+       |dependency's src/test), and run the relevant tests until they pass: a round without a test is rejected. Keep
        |the change small and focused on that one cause. Don't redo the goal's work, and don't change the goal's project.
+       |The files are live: everything that worked on them (the goal, earlier rounds, other sessions) left its edits in
+       |place, finished or not, and nothing is set aside or undone. Work on them as they are now and build on those edits,
+       |never revert them; where they leave the build or the tests broken, making them pass is shared work this round
+       |does too.
        |${if history.isEmpty then "" else "Earlier rounds: " + history.mkString("; ") + "."}
        |
        |This is round $n of a self-improvement run, on ${args.soness} itself: edit its files (and, where the cause is in
@@ -237,6 +242,10 @@ object GoalRun extends ZIOAppDefault:
       _             <- Console.printLine(head)
       design        <- ZIO.attemptBlocking(Files.readString(args.soness.resolve("DESIGN.md"), UTF_8)).orElseSucceed("(no DESIGN.md)")
       o              = Improve.Options(log, args.rounds, args.eval, None)
+      // what the goal changed, as its edits made it (the project's event log): a record; the files stay as it left them
+      events        <- EventLog.at(args.project).read
+      _             <- write("goal.patch", Improve.patchOf(EventLog.changes(events, session, 1), args.project,
+                         SourceDependencies.of(args.project)))
       rounds        <- if !args.improve then ZIO.succeed(Nil)
                        else ZIO.foldLeft(1 to args.rounds)(List.empty[String]): (history, n) =>
                          if history.lastOption.exists(_.startsWith(Improve.NoChange)) then ZIO.succeed(history)
@@ -249,7 +258,8 @@ object GoalRun extends ZIOAppDefault:
                                            "goal" -> Json.Str(args.goal), "prompt" -> Json.Str(round.prompt)).toJsonPretty, UTF_8))
                              _        <- ZIO.logInfo(s"goal run: improvement round $n in ${args.soness}")
                              worked   <- attempt(agent, text, args.soness, round.prompt).either
-                             verdict  <- steps.gate(o, round)
+                             // the round's change is its own session's edits (its first task)
+                             verdict  <- steps.gate(o, round, Improve.By(worked.fold(_ => "", _._1), 1))
                              line      = Improve.history(verdict, worked.toOption.map(_._2))
                              _        <- Console.printLine(s"Round $n: $line\nIts record: ${round.out}\n")
                            yield history :+ line

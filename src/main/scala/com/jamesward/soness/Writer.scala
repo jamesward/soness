@@ -35,11 +35,11 @@ object Provider:
  * for arguments and plans, text for replies) and to use no tools; any permission it asks for is refused. The agent's
  * process is started on first use and kept for the life of `scope`.
  *
- * A new session costs the agent seconds (Kiro starts its own MCP servers for each), so sessions are kept warm: each
- * loop (a turn's, a parallel part's: [[ParallelLoop.currentLoop]]) writes in a session of its own, one writing at a
- * time, which it keeps for its next writings (they're about the same work), up to [[AcpWriter.MaxUses]]; a writing
- * that finds its loop's session busy takes another. A spare session is always being made, so a loop's first writing
- * doesn't wait for one. All of them work in one scratch directory with no MCP servers.
+ * Every writing is in a clean session of its own: each prompt is whole (the request, the steps it needs, the tool), so
+ * an earlier writing's history would only make the model read more (it slowed later writings in a reused session). A
+ * spare session is always being made, so a writing doesn't wait for one (after Kiro's first, a new session takes
+ * milliseconds), and a session is closed once its writing is answered. All of them work in one scratch directory with
+ * no MCP servers.
  */
 final class AcpWriter(name: String, command: AgentCommand, connection: UIO[Either[Throwable, AcpWriter.Connected]],
     prompts: WritingPrompts) extends Writer:
@@ -106,45 +106,31 @@ final class AcpWriter(name: String, command: AgentCommand, connection: UIO[Eithe
           _       <- ZIO.logDebug(s"ACP search $name in ${(ended - started) / 1000000}ms (session ${slot.session.value.take(8)}): prompt=$prompt answer=$written")
         yield written
 
-  /** One prompt in the loop's warm session: the agent's text, its tokens (in, out) when it reports them, and the time taken. */
+  /** `prompt` as it is, in a clean session: the agent's text and the time it took (for the evals' replays). */
+  private[soness] def raw(prompt: String): Task[(String, Long)] = ask(prompt).map((text, _, ms) => (text, ms))
+
+  /** One prompt in a clean session (closed after): the agent's text, its tokens (in, out) when it reports them, and the time taken. */
   private def ask(prompt: String): Task[(String, (Int, Int), Long)] =
     connection.flatMap(ZIO.fromEither(_)).flatMap: c =>
-      for
-        key  <- ParallelLoop.currentLoop.get.map(_.getOrElse(""))
-        slot <- c.slots.get.map(_.get(key)).someOrElseZIO(c.take.tap(s => c.slots.update(m => keepRecent(m, key, s))))
-        // the loop's session is busy (a background call writing at the same time): another one, for this writing
-        out  <- slot.lock.tryWithPermit(write(c, key, slot, prompt))
-                  .someOrElseZIO(c.take.flatMap(other => other.lock.withPermit(write(c, "", other, prompt))))
-      yield out
-
-  /** `prompt` in `slot`'s session, which is retired from its loop once it has had [[MaxUses]] writings. */
-  private def write(c: Connected, key: String, slot: Slot, prompt: String): Task[(String, (Int, Int), Long)] =
-    for
-      uses     <- slot.uses.getAndUpdate(_ + 1)
-      _        <- slot.text.set(new StringBuilder)
-      // an earlier writing in this session was for the same work, but each is answered on its own
-      asked     = if uses == 0 then prompt else s"$FollowOn\n\n$prompt"
-      started  <- Clock.nanoTime
-      response <- c.agent.prompt(PromptRequest(slot.session, List(ContentBlock.text(asked))))
-                    .mapError(e => RuntimeException(s"$name: ${e.message}"))
-      ended    <- Clock.nanoTime
-      written  <- slot.text.get.map(_.toString)
-      _        <- c.slots.update(_.filterNot((k, s) => k == key && (s eq slot))).when(uses + 1 >= MaxUses)
-      _        <- ZIO.logDebug(s"ACP writer $name in ${(ended - started) / 1000000}ms (session ${slot.session.value.take(8)}, writing ${uses + 1}): prompt=$asked answer=$written")
-    yield (written, response.usage.fold((0, 0))(u => (u.inputTokens.toInt, u.outputTokens.toInt)), (ended - started) / 1000000)
+      ZIO.acquireReleaseWith(c.take)(c.close): slot =>
+        for
+          started  <- Clock.nanoTime
+          response <- c.agent.prompt(PromptRequest(slot.session, List(ContentBlock.text(prompt))))
+                        .mapError(e => RuntimeException(s"$name: ${e.message}"))
+          ended    <- Clock.nanoTime
+          written  <- slot.text.get.map(_.toString)
+          _        <- ZIO.logDebug(s"ACP writer $name in ${(ended - started) / 1000000}ms (session ${slot.session.value.take(8)}): prompt=$prompt answer=$written")
+        yield (written, response.usage.fold((0, 0))(u => (u.inputTokens.toInt, u.outputTokens.toInt)), (ended - started) / 1000000)
 
 object AcpWriter:
-  /** How many writings a session has before it's retired (its context grows with each). */
-  val MaxUses = 12
+  /**
+   * The model Kiro writes with, unless its command names one (`--model`): Sonnet answers soness's prompts (tens of
+   * thousands of characters) in about half Opus's time (`KiroLatencySpec`).
+   */
+  val KiroModel = "claude-sonnet-5.5"
 
-  /** How many loops' sessions are kept warm at once. */
-  val MaxSlots = 8
-
-  /** What a writing after the first in a session is prefixed with. */
-  val FollowOn = "A new request, for the same work as the earlier ones in this session: answer only this one, as it asks."
-
-  /** A warm session: where its text goes, one writing at a time, and how many writings it has had. */
-  final case class Slot(session: SessionId, text: Ref[StringBuilder], lock: Semaphore, uses: Ref[Int], modes: Set[String] = Set.empty)
+  /** A session, made ahead: where its text goes, and the modes the agent offers in it. */
+  final case class Slot(session: SessionId, text: Ref[StringBuilder], modes: Set[String] = Set.empty)
 
   /**
    * The agents soness gives Kiro in its sessions' directory (Kiro loads the agent files of a workspace's `.kiro/agents` as session
@@ -155,12 +141,12 @@ object AcpWriter:
   val WriteAgent = "soness-write"
   val SearchAgent = "soness-search"
 
-  private def agentConfig(name: String, description: String, tools: List[String]): String =
-    Json.Obj(
+  private def agentConfig(name: String, description: String, tools: List[String], model: Option[String]): String =
+    Json.Obj(Chunk[(String, Json)](
       "name" -> Json.Str(name), "description" -> Json.Str(description), "prompt" -> Json.Null,
       "tools" -> Json.Arr(tools.map(Json.Str(_))*), "allowedTools" -> Json.Arr(tools.map(Json.Str(_))*),
       "mcpServers" -> Json.Obj(), "useLegacyMcpJson" -> Json.Bool(false), "resources" -> Json.Arr(),
-    ).toJson
+    ) ++ Chunk.from(model.map(m => "model" -> Json.Str(m)))).toJson
 
   /**
    * A connected agent: where each of its sessions' text goes, the warm sessions by loop, and the spare being made; its
@@ -168,7 +154,7 @@ object AcpWriter:
    * running a [[AcpWriter.search]], the only ones whose web tool calls are allowed.
    */
   final case class Connected(agent: AgentConnection, sessions: Ref[Map[SessionId, Ref[StringBuilder]]], dir: java.nio.file.Path,
-      slots: Ref[Map[String, Slot]], spare: Ref[Option[Fiber[Throwable, Slot]]], scope: Scope,
+      spare: Ref[Option[Fiber[Throwable, Slot]]], scope: Scope,
       searching: Ref[Map[SessionId, Promise[Nothing, String]]]):
     /** A new session, warm: in the scratch directory, its text collected. */
     def open: Task[Slot] =
@@ -182,9 +168,12 @@ object AcpWriter:
                      .when(modes(WriteAgent))
         text    <- Ref.make(new StringBuilder)
         _       <- sessions.update(_.updated(session, text))
-        lock    <- Semaphore.make(1)
-        uses    <- Ref.make(0)
-      yield Slot(session, text, lock, uses, modes)
+      yield Slot(session, text, modes)
+
+    /** A writing's session, done with: forgotten here, and closed in the agent (in the background; one that can't is left). */
+    def close(slot: Slot): UIO[Unit] =
+      sessions.update(_ - slot.session) *>
+        agent.closeSession(CloseSessionRequest(slot.session)).ignore.forkIn(scope).unit
 
     /** The spare session (or, when there's none, a new one), with the next spare started. */
     def take: Task[Slot] =
@@ -198,11 +187,6 @@ object AcpWriter:
 
     /** Starts making the next spare session, in the background, for the life of the agent. */
     def prepare: UIO[Unit] = open.forkIn(scope).flatMap(f => spare.set(Some(f)))
-
-  /** `slots` with `key`'s session `slot`, keeping at most [[MaxSlots]] (the others' sessions are left to the agent). */
-  private def keepRecent(slots: Map[String, Slot], key: String, slot: Slot): Map[String, Slot] =
-    val kept = if slots.size >= MaxSlots then slots.drop(slots.size - MaxSlots + 1) else slots
-    kept.updated(key, slot)
 
   /**
    * The ACP client side: the agent's messages collected per session; its permission requests refused (no tools),
@@ -243,19 +227,28 @@ object AcpWriter:
 
   /** A writer of the agent at the other end of `transport` (in tests, one served in memory), for the life of the scope. */
   def over(name: String, transport: com.jamesward.zioacp.Transport, prompts: WritingPrompts): ZIO[Scope, Throwable, AcpWriter] =
-    connected((client, _) => AcpClient.connect(transport, client)).flatMap(ZIO.fromEither(_)).map(c => AcpWriter(name, AgentCommand(name), ZIO.succeed(Right(c)), prompts))
+    connected(None, (client, _) => AcpClient.connect(transport, client)).flatMap(ZIO.fromEither(_)).map(c => AcpWriter(name, AgentCommand(name), ZIO.succeed(Right(c)), prompts))
+
+  /**
+   * The command a writer's agent is launched with, and the model its agents' configs name: Kiro (`kiro-cli acp`, no
+   * `--agent` of its own) gets soness's tool-less writing agent, and [[KiroModel]] unless the command names a model.
+   */
+  def launched(command: AgentCommand): (AgentCommand, Option[String]) =
+    val kiro = java.nio.file.Path.of(command.command).getFileName.toString.startsWith("kiro") && command.args.contains("acp") &&
+      !command.args.contains("--agent")
+    val model = Option.when(kiro && !command.args.contains("--model"))(KiroModel)
+    (if kiro then command.copy(args = command.args ++ List("--agent", WriteAgent) ++ model.toList.flatMap(m => List("--model", m))) else command,
+      model)
 
   private def connect(command: AgentCommand, scope: Scope): UIO[Either[Throwable, Connected]] =
     // started in the scratch directory: Kiro loads the agents of its working directory's `.kiro/agents`, not a session's
     // and Kiro with soness's tool-less agent as its default, so a new session starts none of the user's MCP servers
-    val kiro = java.nio.file.Path.of(command.command).getFileName.toString.startsWith("kiro") && command.args.contains("acp") &&
-      !command.args.contains("--agent")
-    val started = if kiro then command.copy(args = command.args ++ List("--agent", WriteAgent)) else command
-    connected((client, dir) => AcpClient.launch(started.copy(cwd = started.cwd.orElse(Some(dir))), client,
+    val (started, model) = launched(command)
+    connected(model, (client, dir) => AcpClient.launch(started.copy(cwd = started.cwd.orElse(Some(dir))), client,
       line => ZIO.logDebug(s"ACP writer ${command.command} stderr: $line")))
       .provideEnvironment(ZEnvironment[Scope](scope))
 
-  private def connected(open: (com.jamesward.zioacp.Client, java.nio.file.Path) => ZIO[Scope, Throwable, AgentConnection])
+  private def connected(model: Option[String], open: (com.jamesward.zioacp.Client, java.nio.file.Path) => ZIO[Scope, Throwable, AgentConnection])
       : ZIO[Scope, Nothing, Either[Throwable, Connected]] =
     (for
       sessions <- Ref.make(Map.empty[SessionId, Ref[StringBuilder]])
@@ -265,16 +258,15 @@ object AcpWriter:
       _        <- ZIO.attemptBlocking:
                     val agents = java.nio.file.Files.createDirectories(dir.resolve(".kiro").resolve("agents"))
                     java.nio.file.Files.writeString(agents.resolve(s"$WriteAgent.json"),
-                      agentConfig(WriteAgent, "soness's writer: answers only, with no tools", Nil))
+                      agentConfig(WriteAgent, "soness's writer: answers only, with no tools", Nil, model))
                     java.nio.file.Files.writeString(agents.resolve(s"$SearchAgent.json"),
                       agentConfig(SearchAgent, "soness's web search: web_search only",
-                        ToolResolver.catalog.covering("kiro", Set(ToolResolver.Capability.WebSearch))))
+                        ToolResolver.catalog.covering("kiro", Set(ToolResolver.Capability.WebSearch)), model))
       agent    <- open(Collecting(sessions, searching), dir)
       _        <- agent.initialize(InitializeRequest(ProtocolVersion.V1, ClientCapabilities())).mapError(e => RuntimeException(e.message))
-      slots    <- Ref.make(Map.empty[String, Slot])
       spare    <- Ref.make(Option.empty[Fiber[Throwable, Slot]])
       scope    <- ZIO.scope
-      c         = Connected(agent, sessions, dir, slots, spare, scope, searching)
+      c         = Connected(agent, sessions, dir, spare, scope, searching)
       // the first session, made now: the first writing doesn't wait for it
       _        <- c.prepare
     yield c).either

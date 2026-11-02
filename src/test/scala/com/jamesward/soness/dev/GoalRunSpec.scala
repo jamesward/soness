@@ -4,6 +4,7 @@ import com.jamesward.soness.*
 import com.jamesward.zio_decisions.orchestration.AgentLoop.Document
 import zio.*
 import zio.http.Client
+import zio.json.ast.Json
 import zio.test.*
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -19,9 +20,19 @@ object GoalRunSpec extends ZIOSpecDefault:
 
   /** A harness that answers each prompt by its first line, recording where and what it was asked. */
   private final class Recording(asked: Ref[Vector[String]]) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       asked.update(_ :+ prompt).as(HarnessResult(s"did: ${prompt.linesIterator.next()}", ModelUsage(llmCalls = 1, jevCalls = 2)))
+    override def judge(situation: String, question: String, yes: String, no: String): Task[Double] = ZIO.succeed(0.25)
+
+  /** A harness whose goal edits `src/main/A.scala` with the session's tools, and whose rounds record what that file is. */
+  private final class Editing(project: Path, seen: Ref[Vector[String]]) extends Harness:
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
+        steering: UIO[List[String]]): Task[HarnessResult] =
+      val work =
+        if prompt.startsWith(Asked) then ZIO.attemptBlocking(Files.readString(project.resolve("src/main/A.scala"), UTF_8)).flatMap(t => seen.update(_ :+ t))
+        else toolset.call("write_file", Json.Obj("path" -> Json.Str("src/main/A.scala"), "content" -> Json.Str("val a = 2\n"))).unit
+      work.as(HarnessResult("did it", ModelUsage(llmCalls = 1, jevCalls = 1)))
     override def judge(situation: String, question: String, yes: String, no: String): Task[Double] = ZIO.succeed(0.25)
 
   /** Steps that record the rounds and judge each a change that passes. */
@@ -30,8 +41,8 @@ object GoalRunSpec extends ZIOSpecDefault:
       val out = dir.resolve(s"r$n")
       made.update(_ :+ s"prepare $n history=${history.size}") *> ZIO.attemptBlocking(Files.createDirectories(out))
         .as(Improve.Round(n, out, dir, "the observer's prompt"))
-    def gate(o: Improve.Options, round: Improve.Round): Task[Improve.Verdict] =
-      made.update(_ :+ s"gate ${round.round} ${round.prompt.linesIterator.next()}").as(Improve.Verdict("tests pass (no eval)", files = List("src/main/scala/A.scala")))
+    def gate(o: Improve.Options, round: Improve.Round, by: Improve.By): Task[Improve.Verdict] =
+      made.update(_ :+ s"gate ${round.round} task ${by.task} ${round.prompt.linesIterator.next()}").as(Improve.Verdict("tests pass (no eval)", files = List("src/main/scala/A.scala")))
 
   private def call(id: String, tool: String, start: Long, ms: Long, args: String = "{}", failed: Boolean = false) =
     Transcript.Call(id, tool, None, args, Instant.ofEpochMilli(start), Some(ms), Some(if failed then Left("no") else Right("ok")))
@@ -71,7 +82,7 @@ object GoalRunSpec extends ZIOSpecDefault:
         asked   <- Ref.make(Vector.empty[String])
         made    <- Ref.make(Vector.empty[String])
         sessions <- Ref.make(Vector.empty[String])
-        catalog  = HarnessCatalog.make(List("m" -> Recording(asked)), "m", HarnessMode.Single).toOption.get
+        catalog  = HarnessCatalog.make(List("m" -> Recording(asked)), "m").toOption.get
         turn     = Transcript.Turn("s", 1, "fix it", Instant.ofEpochMilli(0), Some(Instant.ofEpochMilli(4000)),
                      calls = Vector(call("c1", "read_file", 0, 1000), call("c2", "read_file", 2000, 1000)))
         args     = GoalRun.Args("fix the checkout bug", project, soness, 2, improve = true, eval = false, allow = false)
@@ -93,19 +104,46 @@ object GoalRunSpec extends ZIOSpecDefault:
             p.contains("p 0.25") && p.contains("tools: 2 calls") && p.contains("parallelism") &&
             p.contains("Parellize everything possible") && p.contains("token efficiency") && p.contains("time efficiency") &&
             p.contains("alignment with DESIGN.md")),
+          // the files are live: what worked on them before is built on, never set aside or undone
+          improvement.forall(_.contains("The files are live")),
           improvement.head.contains("round 1"), improvement(1).contains("round 2") && improvement(1).contains("Earlier rounds: tests pass"),
           // the gates judge the round's request (not the observer's), each round after its work
-          steps == Vector("prepare 1 history=0", s"gate 1 $Asked", "prepare 2 history=1", s"gate 2 $Asked"),
+          steps == Vector("prepare 1 history=0", s"gate 1 task 1 $Asked", "prepare 2 history=1", s"gate 2 task 1 $Asked"),
           goal.contains("\"accomplished\" : 0.25"), goal.contains("\"telemetry\""), record,
           summary.contains("Improvement rounds:\n1. tests pass (no eval)"),
         )
+    } @@ TestAspect.withLiveClock,
+    test("a goal on soness itself: the rounds work on the files as the goal left them, live; its change is recorded from the event log") {
+      for
+        soness  <- ZIO.attemptBlocking:
+                     val d = Files.createTempDirectory("goal-live")
+                     Files.createDirectories(d.resolve("src/main")); Files.writeString(d.resolve("src/main/A.scala"), "val a = 1\n", UTF_8)
+                     Files.writeString(d.resolve("DESIGN.md"), "- Work in place", UTF_8); d
+        seen    <- Ref.make(Vector.empty[String])
+        catalog  = HarnessCatalog.make(List("m" -> Editing(soness, seen)), "m").toOption.get
+        made    <- Ref.make(Vector.empty[String])
+        args     = GoalRun.Args("change a", soness, soness, 1, improve = true, eval = false, allow = false)
+        out      = soness.resolve("target/goal-runs/r")
+        _       <- GoalRun.runWith(args, catalog, Recorded(soness.resolve("target/improve"), made), None, out, (_, _) => ZIO.none)
+        rounds  <- seen.get
+        now     <- ZIO.attemptBlocking(Files.readString(soness.resolve("src/main/A.scala"), UTF_8))
+        patch   <- ZIO.attemptBlocking(Files.readString(out.resolve("goal.patch"), UTF_8))
+        steps   <- made.get
+      yield assertTrue(
+        // the round saw the goal's edit in place, and it stays: nothing set aside, put back or undone
+        rounds == Vector("val a = 2\n"), now == "val a = 2\n",
+        // what the goal changed, from its edits in the event log
+        patch == "--- a/src/main/A.scala\n+++ b/src/main/A.scala\n@@ -1,1 +1,1 @@\n-val a = 1\n+val a = 2\n",
+        steps.exists(_.startsWith("gate 1 task 1")),
+        !Files.exists(out.resolve("pre-goal")),
+      )
     } @@ TestAspect.withLiveClock,
     test("--no-improve: the goal only, its record, no round") {
       for
         root    <- ZIO.attemptBlocking(Files.createTempDirectory("goal-run"))
         asked   <- Ref.make(Vector.empty[String])
         made    <- Ref.make(Vector.empty[String])
-        catalog  = HarnessCatalog.make(List("m" -> Recording(asked)), "m", HarnessMode.Single).toOption.get
+        catalog  = HarnessCatalog.make(List("m" -> Recording(asked)), "m").toOption.get
         args     = GoalRun.Args("say hello", root, root, 1, improve = false, eval = false, allow = false)
         summary <- GoalRun.runWith(args, catalog, Recorded(root.resolve("improve"), made), None, root.resolve("record"), (_, _) => ZIO.none)
         prompts <- asked.get

@@ -3,6 +3,7 @@ package com.jamesward.soness
 import com.jamesward.zioacp.schema.*
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 import zio.json.ast.Json
 
 import java.nio.charset.StandardCharsets.UTF_8
@@ -33,8 +34,13 @@ object EventLog:
     case SessionStarted(session: String, at: String, cwd: String)
     case TaskStarted(session: String, task: Int, at: String, request: String)
     case ToolCalled(session: String, task: Int, at: String, call: String, tool: String, title: String, kind: String,
-        arguments: String, succeeded: Boolean, result: String, files: List[String] = Nil)
+        arguments: String, succeeded: Boolean, result: String, files: List[String] = Nil, loop: String = "")
     case TaskEnded(session: String, task: Int, at: String, ending: String, reply: Option[String])
+    /**
+     * A file an edit call changed, as it found and left it: `patch` is the change as a unified diff of `file` (an
+     * absolute path), so what a task changed is read from the log, never from a copy of the project.
+     */
+    case FileChanged(session: String, task: Int, at: String, call: String, file: String, patch: String, loop: String = "")
 
     def session: String
 
@@ -86,6 +92,7 @@ object EventLog:
     case e: Event.TaskStarted    => e.at
     case e: Event.ToolCalled     => e.at
     case e: Event.TaskEnded      => e.at
+    case e: Event.FileChanged    => e.at
 
   /** An earlier task: its request, how it ended, its reply, its calls' files, and when it ended. */
   final case class Task(session: String, task: Int, request: String, ending: String, reply: Option[String],
@@ -99,6 +106,60 @@ object EventLog:
       case e: Event.TaskEnded if started.contains((e.session, e.task)) =>
         Task(e.session, e.task, started((e.session, e.task)).request, e.ending, e.reply,
           calls.getOrElse((e.session, e.task), Nil).flatMap(_.files).distinct, e.at)
+
+  /**
+   * The log's events as they're appended, by any session in any soness process in the project, from the end it has
+   * now: the file system says when the log grows (nothing polls), and each new complete line is an event.
+   */
+  def follow(file: Path): ZStream[Any, Throwable, Event] =
+    ZStream.unwrapScoped:
+      for
+        _       <- ZIO.attemptBlocking(Files.createDirectories(file.getParent))
+        watcher <- ZIO.fromAutoCloseable(ZIO.attemptBlocking(file.getFileSystem.newWatchService()))
+        _       <- ZIO.attemptBlocking(file.getParent.register(watcher, java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY,
+                     java.nio.file.StandardWatchEventKinds.ENTRY_CREATE))
+        offset  <- ZIO.attemptBlocking(if Files.exists(file) then Files.size(file) else 0L).flatMap(Ref.make(_))
+      yield
+        // what's new since the offset, its complete lines only (a line being written is read when it's done)
+        val fresh: zio.Task[Chunk[Event]] =
+          offset.get.flatMap: from =>
+            ZIO.attemptBlocking:
+              if !Files.exists(file) || Files.size(file) <= from then (from, Chunk.empty[String])
+              else
+                val channel = java.nio.channels.FileChannel.open(file, StandardOpenOption.READ)
+                try
+                  val buffer = java.nio.ByteBuffer.allocate((Files.size(file) - from).toInt)
+                  channel.read(buffer, from)
+                  val text = String(buffer.array(), 0, buffer.position(), UTF_8)
+                  val done = text.lastIndexOf('\n') + 1
+                  (from + text.take(done).getBytes(UTF_8).length, Chunk.from(text.take(done).linesIterator.toList))
+                finally channel.close()
+            .flatMap((next, lines) => offset.set(next).as(lines.flatMap(_.fromJson[Event].toOption)))
+        ZStream.repeatZIOChunk(ZIO.attemptBlockingInterrupt(watcher.take()).flatMap(key =>
+          ZIO.succeed { key.pollEvents(); key.reset() } *> fresh))
+
+  /** The files `task` of `session` changed, in the order it changed them: each change's file and patch. */
+  def changes(events: List[Event], session: String, task: Int): List[Event.FileChanged] =
+    events.collect { case c: Event.FileChanged if c.session == session && c.task == task => c }
+
+  /** A patch kept in the log is at most this many characters (a whole new file of more is cut). */
+  val MaxPatch = 200_000
+
+  /**
+   * The change from `before` to `after` (none: the file didn't exist, or no longer does) as a unified diff of `label`:
+   * one hunk, from the first line that differs to the last, with no context lines, which `patch` applies.
+   */
+  def patchOf(label: String, before: Option[String], after: Option[String]): String =
+    val b = before.fold(Vector.empty[String])(_.linesIterator.toVector)
+    val a = after.fold(Vector.empty[String])(_.linesIterator.toVector)
+    val prefix = b.zip(a).takeWhile(_ == _).size
+    val suffix = b.drop(prefix).reverse.zip(a.drop(prefix).reverse).takeWhile(_ == _).size
+    val (removed, added) = (b.slice(prefix, b.size - suffix), a.slice(prefix, a.size - suffix))
+    def range(start: Int, n: Int) = s"${if n == 0 then start else start + 1},$n"
+    val text = (Vector(s"--- ${if before.isEmpty then "/dev/null" else s"a/$label"}", s"+++ ${if after.isEmpty then "/dev/null" else s"b/$label"}",
+      s"@@ -${range(prefix, removed.size)} +${range(prefix, added.size)} @@") ++ removed.map("-" + _) ++ added.map("+" + _))
+      .mkString("", "\n", "\n")
+    if text.length > MaxPatch then text.take(MaxPatch) + "\n… (cut)\n" else text
 
   /** The highest task number `session` has used, so a resumed session's tasks go on from it. */
   def lastTask(events: List[Event], session: String): Int =

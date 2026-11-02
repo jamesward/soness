@@ -79,7 +79,6 @@ Argument: `--debug` logs at debug level, and to a file of its own (see [Logging]
 | `SONESS_SHARED_TTL_MINUTES` | no | `60` | how long a result in the project's shared log (`.soness/results/`: web pages, versioned artifacts' docs) answers the same call from any session |
 | `SONESS_PEERS` | no | `true` | `false` neither publishes this process's process tree for the user's other soness processes' `/status` nor shows theirs |
 | `SONESS_ACP_AGENTS` | no | Kiro, when `kiro-cli` is installed | the ACP agents that can write for Jev (the `acp` mode's models): `name=command args…` separated by `;`, for example `kiro=kiro-cli acp;claude=npx -y @agentclientprotocol/claude-agent-acp`; empty for none |
-| `SONESS_MODE` | no | `auto` | how the harness works on a request (see [Work](#work)): `auto` (Jev decides), or `single` or `parallel` to force one, for tests, evals and the CLI; not a client setting |
 
 At startup soness checks every configured model with a one-line chat (a few tokens each, in parallel) and offers
 only those that answer; each one that doesn't is logged on stderr with Bedrock's error. Sessions start with
@@ -105,13 +104,15 @@ The decision model decides; a generative model writes (a chosen tool's arguments
 session's ACP mode, and the model picker lists that provider's models:
 
 - `bedrock`: a Bedrock model (`BEDROCK_MODEL_ID`, `SONESS_BEDROCK_MODELS`);
-- `acp`: an ACP agent (`SONESS_ACP_AGENTS`; Kiro by default when it's installed), each writing a prompt in a session
-  of its own, in a scratch directory with no MCP servers, asked for only the JSON or text needed; its permission
+- `acp`: an ACP agent (`SONESS_ACP_AGENTS`; Kiro by default when it's installed, writing with `claude-sonnet-5.5`
+  unless its command names a `--model`), each writing a prompt in a clean session of its own (made ahead, closed once
+  answered), in a scratch directory with no MCP servers, asked for only the JSON or text needed; its permission
   requests are refused, so it uses no tools of its own. The agent's process starts on first use.
 
 ## Work
 
-There's nothing to choose: a session starts in `auto`, where Jev decides for each request how to work on it. Jev first
+There are no modes: whatever can run at the same time does (a loop's independent calls as a batch, a request's
+independent parts, the tasks of a session and of every session in the project). For each request Jev first
 answers one yes-or-no question (one cheap request): is the request made of several independent parts of real work
 (scenarios, endpoints, functions, separate changes, each with its own code and test)? When not (a question, a bug, one
 change), one agent loop works through it, as it always has. When so (zio-decisions' `ParallelLoop.auto`):
@@ -127,8 +128,7 @@ change), one agent loop works through it, as it always has. When so (zio-decisio
    finish gets a second round at once, when Jev judges from its calls that another is likely to get there);
 5. a last loop checks them together and replies.
 
-There's no setting for this in the client: Jev decides. `SONESS_MODE` (`single` or `parallel`) forces one or the other,
-for tests, evals and the CLI. Each tool call update says which loop made it
+There's no setting for this: Jev decides. Each tool call update says which loop made it
 (`_meta.soness.loop`). `AutoModeEvalSpec` measures Jev's first decision on labelled requests.
 
 The session's tools are shared as a validation service: reads run freely; edits run one at a time; builds, tests and
@@ -156,6 +156,17 @@ The sessions in a project also share its state (`Workspace`):
 - every call is in the project's activity log, by task, with the task's request: each decision and writing sees what
   the other sessions are doing (their requests, their edits, their runs and how they ended, the pages they fetched),
   fitted into the context by priority with the rest; a session's own calls are its steps, so they aren't repeated.
+- what other tasks do is pushed to the loops it bears on (zio-decisions' `Notices`), not only found at their next
+  look: the project's event log is followed as it grows, by every soness process in the project (the file system
+  says when; nothing polls), and another task's edit of a file a loop read or edited, or its check that failed while
+  the loop edits or checks, reaches that loop. The decision model judges each one (one yes-or-no question, with what
+  the loop is doing and what its work has touched): one that makes the work in flight out of date is marked so at the
+  top of the loop's next decision, the rest are noted. This is always on: soness assumes work is concurrent.
+  `NoticeJudgeEvalSpec` measures that judgment on labelled cases; `CoordinationEvalSpec` runs two sessions changing
+  the same file at once;
+- an edit of a file that changed since its loop last read or wrote it (another task's edit) isn't made: it fails at
+  once with what changed, so the loop writes it again on top of the other change rather than over it. The same call
+  made again then isn't taken for a repeat of a failed one;
 - the files earlier tasks read (this session's, a follow-up's "go ahead", or another session's) whose file hasn't
   changed since (same size and last change, no call naming it since) are in the context with their text, so they
   aren't read again; a file that changed is left out and read anew.
@@ -318,7 +329,9 @@ carry `session=<id>`. Debug logs contain prompts, tool data and model output, so
   tools, the options go from about 52,000 characters to 9,000.
 - When neither the session's MCP servers nor the client give file or command tools (a client without an IDE server
   or ACP `fs`/`terminal`, with only a build server like sbta), soness offers its own, on the project only (a path
-  outside it is refused): `read_file`, `list_files`, `search_text`, `edit_file` (an exact replacement of a unique
+  outside it is refused): `read_file` (a range, or a log's last lines), `list_directory` (any directory, build output
+  and logs too, each entry's size and time, newest or largest first), `list_files` (by glob; build output when the glob
+  names it or asked), `search_text` (matching lines, or counts per file), `edit_file` (an exact replacement of a unique
   piece of text; one whose lines match but for indentation is re-indented) and `write_file` when no session tool edits,
   and `run_command` (bash in the project, its exit awaited, killed on timeout or stop) when no session tool runs
   commands. `SONESS_LOCAL_TOOLS=false` leaves them out.
@@ -341,7 +354,8 @@ carry `session=<id>`. Debug logs contain prompts, tool data and model output, so
   the key needs the `bedrock-websearch` permissions, and pages come from Bedrock's index and cache only), Kiro's own
   for the Kiro writer, none otherwise.
 - Sessions are kept, in the project's event log (`.soness/events.jsonl`, append-only, one event a line: each
-  session's start, each task's request, tool calls and reply; `.soness/` ignores itself for git). The log is the
+  session's start, each task's request, tool calls and reply, and each file an edit changed, as a patch;
+  `.soness/` ignores itself for git). The log is the
   record and everything else is a view of it: `session/list` lists the project's sessions (titled by their first
   request), `session/load` sets one up again and replays its history (requests, tool calls, replies), and
   `session/resume` sets one up again without the replay; a resumed session's tasks go on from its last. There's no
@@ -373,11 +387,11 @@ carry `session=<id>`. Debug logs contain prompts, tool data and model output, so
 
   The response's `_meta.soness.route` says which (`new`, `steer:<task>`, `after:<task>`, `stop:<task>`). Steering that
   arrives as its task ends is taken as a follow-up of it. A session's tasks share its
-  tools as `parallel` mode's parts do (see [Work](#work)). ACP v1 doesn't define steering or queueing (the v2 prompt
+  tools as a request's parallel parts do (see [Work](#work)). ACP v1 doesn't define steering or queueing (the v2 prompt
   lifecycle leaves them open), so this works with clients that send a prompt while one runs; a client that queues
   prompts until the turn ends, or cancels the running turn first, gets one task at a time.
 - Each session's work is a process tree (zio-decisions' `ProcessTree`): its tasks, the loops working on them
-  (parallel mode's gathering, parts and integration) and their tool calls, each with its state, times and id. The
+  (a parallel request's gathering, parts and integration) and their tool calls, each with its state, times and id. The
   session advertises two commands (`available_commands_update`), answered at once whether or not work is running:
   `/status` (what's running, with what has had no answer for a while; `/status all` shows what ended too) and
   `/stop <id>` (stop a task, a loop or a tool call; a session's id stops its work). The tree is the agent's, not the
@@ -444,7 +458,7 @@ server; `checkout` (three checkout changes, with tests, in an sbt project with a
 acceptance tests per change; `katas` (six small Java functions, each with its own `java KatasTest.java <kata>`, no
 build tool) is the cheap one, measuring the orchestration's own cost. Each run reports which parts pass, and a timeline splitting the turn's time into shared
 work, each part, validation (builds, test runs) and the reply, with the parallel estimate (shared + validation +
-the longest part); for soness in parallel mode, each loop's span from the calls' `_meta.soness.loop` too. `SONESS_PARALLEL_TASKS`, `SONESS_EVAL_ARMS` (default `soness`), `SONESS_EVAL_SAMPLES`,
+the longest part); for soness's parallel parts, each loop's span from the calls' `_meta.soness.loop` too. `SONESS_PARALLEL_TASKS`, `SONESS_EVAL_ARMS` (default `soness`), `SONESS_EVAL_SAMPLES`,
 `SONESS_EASYRACER_SCENARIOS` (comma-separated or `all`; default `1,2,4`), `SONESS_EVAL_TURN_MINUTES` (default 15); records
 in `target/evals/parallel-tasks.jsonl`, each run's final sources in `target/evals/projects/`. It needs Docker and
 network; `SONESS_PARALLEL_VALIDATORS=true` checks the validators against the starting projects and reference

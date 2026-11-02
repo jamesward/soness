@@ -20,7 +20,7 @@ object SessionsSpec extends ZIOSpecDefault:
 
   /** Reads one file, answers with the request, and records what it was given. */
   private final class Recording(contexts: Ref[Vector[Option[String]]], asked: Ref[Vector[List[Recall.Earlier]]]) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       contexts.update(_ :+ context) *>
         toolset.call("read_text_file", Json.Obj("path" -> Json.Str("src/A.scala"))).as(HarnessResult(s"did: $prompt", ModelUsage()))
@@ -39,7 +39,7 @@ object SessionsSpec extends ZIOSpecDefault:
       http    <- ZIO.environment[Client]
       parent  <- ZIO.scope
       pipe    <- Transport.pipe
-      catalog  = HarnessCatalog.make(List("m" -> harness), "m", HarnessMode.Single).toOption.get
+      catalog  = HarnessCatalog.make(List("m" -> harness), "m").toOption.get
       _       <- AcpAgent.serve(pipe._1)(client => SonessAgent.make(client, http, catalog, parent))
                    .forkScoped
       agent   <- AcpClient.connect(pipe._2, Updates(updates))

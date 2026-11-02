@@ -95,6 +95,9 @@ object Guard:
     else if Secrets.findFirstIn(arguments.toJson).isDefined then Some(Verdict.Ask("it reaches where credentials are kept"))
     else command(arguments).filterNot(_ => routed.isDefined) match
       case Some(c) if Dangerous.findFirstIn(c).isDefined => Some(Verdict.Ask(s"the command may do what can't be undone: $c"))
+      // a build or a test run is allowed even through a tool its server marks destructive (sbta's `sbt-task`): the
+      // commands that can't be undone (publishing, `--force`) were put to the user just above
+      case Some(_) if SharedTools.supersedable(name, arguments) => Some(Verdict.Allow("a build or a test run"))
       case _ if hint("destructiveHint")                  => Some(Verdict.Ask(s"$name is marked destructive by its server"))
       case Some(c) if Reading.findFirstIn(c).isDefined && !c.contains(">") && !c.contains("`") && !c.contains("$(") =>
         Some(Verdict.Allow("a command that only reads"))

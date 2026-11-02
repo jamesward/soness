@@ -207,9 +207,13 @@ class WritingPrompts(resultLimit: Int = BedrockLlmTransport.ResultLimit):
     (system, s"User request:\n${request.prompt}\n${project(request.context)}\n${capabilities(request)}\n\n$done${documents(request.readings)}\n\n$task" +
       request.problem.fold("")(p => s"\n\n$p"))
 
-  /** The project context the host gathered, as a section of a prompt (with a blank line after), or nothing. */
+  /**
+   * The project context the host gathered, as a section of a prompt (with a blank line after), or nothing. The project's
+   * agent instructions are left out: they guide the decisions (the decision model has them), and writing an argument or
+   * a reply with them is no better (`WritingContextEvalSpec`), only longer.
+   */
   def project(context: Option[String]): String =
-    context.fold("")(c => s"\nProject context (from the project's files; current as of this request):\n$c\n")
+    context.map(WritingPrompts.withoutInstructions).fold("")(c => s"\nProject context (from the project's files; current as of this request):\n$c\n")
 
   /** This tool's failed calls, and arguments already rejected for repeating one: what not to write again. */
   def retries(request: ArgumentsRequest): String =
@@ -240,14 +244,21 @@ class WritingPrompts(resultLimit: Int = BedrockLlmTransport.ResultLimit):
     val read = readings.collect { case AgentLoop.Reading(_, _, title, Right(text)) => s"--- $title ---\n${cut(text)}" }
     if read.isEmpty then "" else read.mkString("\n\nDocuments read (guidance on using the tools):\n", "\n\n", "")
 
+  /**
+   * The steps, each result cut: the last [[WritingPrompts.Recent]] to [[WritingPrompts.RecentLimit]] characters (at most
+   * `resultLimit`), the ones before to [[WritingPrompts.OlderLimit]]. What the call or reply follows is the latest results;
+   * the older ones' starts say what they were (`WritingContextEvalSpec`: as good, half the characters).
+   */
   def steps(all: Vector[Step]): String =
     if all.isEmpty then "(none)"
-    else all.map(step).mkString("\n")
+    else all.zipWithIndex.map((s, i) =>
+      step(s, if i >= all.size - WritingPrompts.Recent then WritingPrompts.RecentLimit.min(resultLimit) else WritingPrompts.OlderLimit.min(resultLimit)))
+      .mkString("\n")
 
-  def step(s: Step): String =
+  def step(s: Step, limit: Int = resultLimit): String =
     val outcome = s.outcome match
-      case Outcome.Succeeded(result) => s"succeeded: ${cut(result.toJson)}"
-      case Outcome.Failed(error)     => s"failed: ${cut(error)}"
+      case Outcome.Succeeded(result) => s"succeeded: ${cut(result.toJson, limit)}"
+      case Outcome.Failed(error)     => s"failed: ${cut(error, limit)}"
     s"${s.number}. ${s.tool} ${s.arguments.toJson} $outcome"
 
   def cut(text: String, limit: Int = resultLimit): String =
@@ -264,6 +275,20 @@ class WritingPrompts(resultLimit: Int = BedrockLlmTransport.ResultLimit):
         case None    => kept + s"… ($more more characters cut: the result goes on)"
 
 object WritingPrompts:
+  /** How many of the last steps keep the longer cut of their results, and the cuts. */
+  val Recent = 2
+  val RecentLimit = 20000
+  val OlderLimit = 4000
+
+  /** A project context without its agent instructions (up to the source dependencies or the MCP servers' notes after them). */
+  def withoutInstructions(context: String): String =
+    val at = context.indexOf(ProjectContext.InstructionsHeading)
+    if at < 0 then context
+    else
+      val end = List("\nSource dependencies (", "\n\nThe MCP server ").map(context.indexOf(_, at + 1)).filter(_ > at).minOption
+        .getOrElse(context.length)
+      context.take(at) + context.drop(end)
+
   /** A line break (real, or escaped in JSON) followed by a numbered line's `Ln:`. */
   private val Numbered = """^(?:\\n|\n)L(\d+):""".r
 

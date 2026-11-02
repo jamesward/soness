@@ -99,6 +99,48 @@ object WorkspaceSpec extends ZIOSpecDefault:
       yield assertTrue(later.contains("1: object A"), later.contains("earlier task of this session"), !later.contains("object B"),
         own.isEmpty, other.contains("1: object A"), other.contains("another session's task [s1/task-1]"))
     } @@ TestAspect.withLiveClock,
+    test("an edit of a file that changed since the loop last read it isn't made: it fails with what changed; the next one is") {
+      val io = new Toolset:
+        val tools = Chunk(
+          ToolSpec("read_file", "Reads a file.", Json.Obj(), None, Some(Json.Obj("readOnlyHint" -> Json.Bool(true)))),
+          ToolSpec("write_file", "Writes a file.", Json.Obj(), None, None))
+        def call(name: String, arguments: Json.Obj): Task[Json] =
+          val path = arguments.get("path").flatMap(_.asString).get
+          if name == "read_file" then ZIO.succeed(Json.Obj("text" -> Json.Str("read")))
+          else ZIO.attemptBlocking(Files.writeString(Path.of(path), arguments.get("content").flatMap(_.asString).get)).as(Json.Obj())
+      for
+        root  <- project
+        file   = root.resolve("A.scala")
+        _     <- ZIO.attemptBlocking(Files.writeString(file, "val a = 1\n"))
+        ws    <- Workspace.make(Some(root))
+        tools  = ws.bind(io)
+        args   = (text: String) => Json.Obj("path" -> Json.Str(file.toString), "content" -> Json.Str(text))
+        _     <- as("s1/task-1/main")(tools.call("read_file", Json.Obj("path" -> Json.Str(file.toString))))
+        // another task changes it (as an edit of any process's would)
+        _     <- as("s2/task-1/main")(tools.call("write_file", args("val a = 2\n")))
+        stale <- as("s1/task-1/main")(tools.call("write_file", args("val a = 3\n"))).either
+        mid   <- ZIO.attemptBlocking(Files.readString(file))
+        again <- as("s1/task-1/main")(tools.call("write_file", args("val a = 2\nval b = 3\n"))).either
+      yield assertTrue(
+        stale.left.exists(e => e.getMessage.contains("changed since you last read it") && e.getMessage.contains("+val a = 2")),
+        mid == "val a = 2\n", again.isRight)
+    },
+    test("the event log's edits and failed checks are notices on the bus, from the loop that made them; its other events aren't") {
+      for
+        root   <- project
+        ws     <- Workspace.make(Some(root))
+        queue  <- ws.bus.subscribe
+        _      <- ws.follow
+        log     = EventLog.at(root)
+        _      <- ZIO.sleep(300.millis)
+        _      <- log.append(EventLog.Event.TaskStarted("s2", 1, "t", "x"))
+        _      <- log.append(EventLog.Event.FileChanged("s2", 1, "t", "c1", root.resolve("A.scala").toString, "--- a/A\n+++ b/A\n", "s2/task-1/main"))
+        _      <- log.append(EventLog.Event.ToolCalled("s2", 1, "t", "c2", "run_command", "Run sbt test", "execute", "{}", false, "1 failed"))
+        got    <- queue.take.zip(queue.take).timeout(10.seconds)
+      yield assertTrue(got.exists((a, b) =>
+        a.kind == "edit" && a.from == "s2/task-1/main" && a.subjects == Set(Workspace.subject(root.resolve("A.scala"))) &&
+          b.kind == "check failed" && b.from == "s2/task-1" && b.subjects == Set(Workspace.Build) && b.text.contains("1 failed")))
+    } @@ TestAspect.withLiveClock,
     test("a call's key ignores its arguments' order") {
       assertTrue(Workspace.keyOf("web_fetch", Json.Obj("url" -> Json.Str("u"), "max_length" -> Json.Num(5))) ==
         Workspace.keyOf("web_fetch", Json.Obj("max_length" -> Json.Num(5), "url" -> Json.Str("u"))))

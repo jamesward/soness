@@ -2,7 +2,7 @@ package com.jamesward.soness
 
 import com.jamesward.zioacp.*
 import com.jamesward.zioacp.schema.*
-import com.jamesward.zio_decisions.orchestration.{AgentLoop, Interjection, ParallelLoop, ProcessTree}
+import com.jamesward.zio_decisions.orchestration.{AgentLoop, Interjection, Notices, ParallelLoop, ProcessTree}
 import zio.*
 import zio.http.Client
 import zio.json.*
@@ -69,7 +69,10 @@ final class SonessAgent private (
       SharedTools.Coordinator.make(locks = Option.when(key.nonEmpty)(SharedTools.Coordinator.lockDir(java.nio.file.Path.of(key))))
         .provideEnvironment(ZEnvironment[Scope](parent))
         .zip(Workspace.make(Option.when(key.nonEmpty)(java.nio.file.Path.of(key)))).flatMap: made =>
-        projects.modify(m => m.get(key).fold((made, m.updated(key, made)))(existing => (existing, m)))
+        projects.modify(m => m.get(key).fold(((made, true), m.updated(key, made)))(existing => ((existing, false), m))).flatMap:
+          // the project's event log followed, for its loops' notices, while the agent runs
+          case (mine, true) => mine._2.follow.provideEnvironment(ZEnvironment[Scope](parent)).as(mine)
+          case (theirs, _)  => ZIO.succeed(theirs)
 
   def initialize(request: InitializeRequest): IO[RpcError, InitializeResponse] =
     // what the client can do (its files, its terminals), for the tools offered on them
@@ -371,11 +374,25 @@ final class SonessAgent private (
           .flatMap(_.command(handle(sessionId, session), name, input)).nextOption())
         .orElse(Commands.parse(text).map(commandText(session, _)))
 
+  /** The process tree's node of a running task: its goal is the task's. */
+  private def taskNode(session: Session, t: RunningTurn): UIO[Option[ProcessTree.Id]] =
+    session.tree.subtree(session.node).map(_.find(n => n.kind == ProcessTree.Kind.Task && n.name == s"task-${t.id}" &&
+      n.state == ProcessTree.State.Running).map(_.id))
+
+  /**
+   * A task's goal, steered: the user's message, routed to it as steering (by the decision model), becomes part of
+   * what it works toward (the request, then each steering message in order).
+   */
+  private def goalSteered(session: Session, t: RunningTurn, message: String): UIO[Unit] =
+    taskNode(session, t).flatMap(ZIO.foreachDiscard(_): n =>
+      t.steering.get.flatMap(all => session.tree.setGoal(n, (t.request :: all).mkString("\nthen, as the user steered: "),
+        s"the user steered it: ${short(message)}")).unit)
+
   private def steerNow(sessionId: SessionId, session: Session, text: String, running: List[RunningTurn]): IO[RpcError, Json] =
     val say = (note: String) => client.sessionUpdate(sessionId, SessionUpdate.AgentMessageChunk(ContentBlock.text(note + "\n\n")))
     val injected = Json.Obj("outcome" -> Json.Str("injected"))
     def into(t: RunningTurn, message: String, note: String): IO[RpcError, Json] =
-      t.steer(message).flatMap: delivered =>
+      t.steer(message).tap(delivered => goalSteered(session, t, message).when(delivered)).flatMap: delivered =>
         if delivered then say(note).as(injected)
         // it ended in the meantime: the client sends it as a prompt
         else ZIO.fail(RpcError.methodNotFound(SonessAgent.SteeringMethod))
@@ -482,6 +499,7 @@ final class SonessAgent private (
               case (Interjection.Route.Steer(_), Some(t)) =>
                 for
                   delivered <- t.steer(text)
+                  _         <- goalSteered(session, t, text).when(delivered)
                   model     <- session.selection.get.map(_.model)
                   response  <-
                     if delivered then
@@ -515,6 +533,7 @@ final class SonessAgent private (
                 yield routedResponse(TurnMetrics(model, "stopped", elapsed.toMillis, 0, jevUsage(d)), s"stop-process:$n")
               case (Interjection.Route.Stop(_), Some(t)) =>
                 for
+                  _        <- taskNode(session, t).flatMap(ZIO.foreachDiscard(_)(n => session.tree.removeGoal(n, s"the user asked to stop: ${short(text)}")))
                   stopped  <- t.stop
                   model    <- session.selection.get.map(_.model)
                   note      = if stopped then s"Stopped: \"${short(t.request)}\"." else s"\"${short(t.request)}\" had already finished."
@@ -542,14 +561,12 @@ final class SonessAgent private (
     ZIO.scoped:
       for
         model   <- session.selection.get.map(_.model)
-        // how the harness works is the catalog's (`SONESS_MODE`, for tests and evals): users don't choose it
-        mode     = catalog.defaultMode
         id      <- session.counter.updateAndGet(_ + 1)
         started <- Clock.instant
         running <- RunningTurn.make(request.sessionId.value, id, text, started)
         _       <- ZIO.acquireRelease(session.turns.update(_.updated(id, running)))(_ =>
                      session.turns.update(_ - id))
-        _       <- ZIO.logDebug(s"prompt (task $id, model $model, mode ${mode.id}): $text")
+        _       <- ZIO.logDebug(s"prompt (task $id, model $model): $text")
         calls   <- Ref.make(0)
         toolset  = reporting(request.sessionId, session.guard.bind(guarded(WebFetch.combine(session.toolset, extended(running)), forbidden), text,
                      running.progress.get.map(_.toList.dropRight(1))), calls, session.callIds, running, session.log, id, session.cwd)
@@ -589,10 +606,11 @@ final class SonessAgent private (
         taskLoop = s"${request.sessionId.value.take(8)}/task-$id"
         // the task in the project's shared state: other sessions' loops see what it's for
         _       <- session.workspace.begin(taskLoop, text)
-        outcome <- AgentLoop.notes.locally(Some(thought))(ClientTools.currentPlan.locally(planTo)(ParallelLoop.currentLoop.locally(Some(taskLoop)):
-                     session.tree.child(Some(session.node), ProcessTree.Kind.Task, s"task-$id", Some(short(text)))(_ =>
-                       harness.runInProject(text, toolset, skills, context, mode, running.steering.get, session.workspace.context(taskLoop))).timed.either
-                       .raceEither(turn.awaitCancel.race(running.stopped.await))))
+        outcome <- AgentLoop.notes.locally(Some(thought))(ClientTools.currentPlan.locally(planTo)(Notices.bus.locally(Some(session.workspace.bus))(ParallelLoop.currentLoop.locally(Some(taskLoop)):
+                     // the task's goal is its request: the user's messages steer it ([[goalSteered]]), a stop removes it
+                     session.tree.child(Some(session.node), ProcessTree.Kind.Task, s"task-$id", Some(short(text)), goal = Some(text))(_ =>
+                       harness.runInProject(text, toolset, skills, context, running.steering.get, session.workspace.context(taskLoop))).timed.either
+                       .raceEither(turn.awaitCancel.race(running.stopped.await)))))
         _       <- running.reply.succeed(outcome match
                      case Left(Right((_, result))) => Some(result.answer)
                      case _                        => None)
@@ -791,9 +809,9 @@ final class SonessAgent private (
       // its own loop name and log annotation, not the launching task's (which the forked fiber would inherit)
       taskLoop = s"${sessionId.value.take(8)}/task-$id"
       _       <- ZIO.logAnnotate("session", sessionId.value):
-                   ZIO.scoped(session.workspace.begin(taskLoop, request) *>
+                   ZIO.scoped(session.workspace.begin(taskLoop, request) *> Notices.bus.locally(Some(session.workspace.bus))(
                    ParallelLoop.currentLoop.locally(Some(taskLoop))(ZIO.logAnnotate("loop", taskLoop)(
-                   session.tree.child(Some(session.node), ProcessTree.Kind.Task, s"task-$id", Some(short(request))): nid =>
+                   session.tree.child(Some(session.node), ProcessTree.Kind.Task, s"task-$id", Some(short(request)), goal = Some(request)): nid =>
                      node.succeed(nid) *> work(new Extension.Background:
                        val id: Int = running.id
                        val node: ProcessTree.Id = nid
@@ -807,7 +825,7 @@ final class SonessAgent private (
                    .flatMap:
                      case Left(Right(summary)) => say(summary) *> ended("answered", Some(summary))
                      case Left(Left(error))    => say(s"\"${short(request)}\" stopped: ${message(error)}") *> ended("failed", None)
-                     case Right(_)             => say(s"\"${short(request)}\" stopped.") *> ended("cancelled", None))))
+                     case Right(_)             => say(s"\"${short(request)}\" stopped.") *> ended("cancelled", None)))))
                    .forkIn(session.scope)
       nid     <- node.await
       _       <- ZIO.logInfo(s"background task $id, process [$nid]: $request")
@@ -890,7 +908,7 @@ final class SonessAgent private (
    * The session's choices as config options, each a drill-down by provider: its writer (`model`: Bedrock's models,
    * the ACP agents; category `_llm_model`, not the editors' top-level `model` picker), and, in a catalog of the real
    * providers, its decision model (Jev, OpenAI's) and its web search (Kiro's, Bedrock's, or none). How the harness
-   * works on a request isn't the user's to choose (`SONESS_MODE` sets it for tests and evals).
+   * works on a request isn't a choice: whatever can run at the same time does.
    */
   private def configOptions(selection: HarnessCatalog.Selection): List[SessionConfigOption] =
     // ACP has no disabled option: an unavailable one is named so, says why, and is marked in `_meta` (choosing it fails)
@@ -985,6 +1003,10 @@ final class SonessAgent private (
                               (resolveIn(cwd, p).fold(p)(_.toString), b, a)))
                             val shown = if !edits then json else Json.Obj("changed" -> Json.Str(summary),
                               "result" -> Json.Str(SharedTools.textOf(json)))
+                            // each changed file, in the project's event log: what a task changed is read from there
+                            EventLog.now.flatMap(at => ZIO.foreachDiscard(log)(l => ZIO.foreachDiscard(after.filter((_, b, a) => b != a)):
+                              (p, b, a) => l.append(EventLog.Event.FileChanged(sessionId.value, task, at, id.value,
+                                resolveIn(cwd, p).fold(p)(_.toString), EventLog.patchOf(p, b, a), loop.getOrElse(""))))) *>
                             ZIO.logDebug(s"tool call ${id.value} $name changed: $summary").when(edits) *>
                               client.sessionUpdate(sessionId, SessionUpdate.ToolCallUpdated(ToolCallUpdate(
                                 id, status = Some(ToolCallStatus.Completed), rawOutput = Some(shown),
@@ -1001,7 +1023,7 @@ final class SonessAgent private (
                       ToolCallView.title(name, arguments, annotations), EventLog.kindName(ToolCallView.kind(name, annotations)),
                       EventLog.cut(arguments.toJson), result.isRight,
                       EventLog.cut(result.fold(message, r => MaxLoggedResult(r._2))),
-                      ToolCallView.locations(arguments).map(_.path))))
+                      ToolCallView.locations(arguments).map(_.path), loop.getOrElse(""))))
           done   <- ZIO.fromEither(result)
         yield done._2
 

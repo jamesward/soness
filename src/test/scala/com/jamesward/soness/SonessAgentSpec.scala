@@ -13,7 +13,7 @@ object SonessAgentSpec extends ZIOSpecDefault:
 
   /** Calls `calls` in order and answers with their results and the model it was made for. */
   private final case class Scripted(model: String, calls: List[(String, Json.Obj)]) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[com.jamesward.zio_decisions.orchestration.AgentLoop.Document], context: Option[String], mode: HarnessMode, steering: UIO[List[String]]): Task[HarnessResult] =
+    def run(prompt: String, toolset: Toolset, documents: Seq[com.jamesward.zio_decisions.orchestration.AgentLoop.Document], context: Option[String], steering: UIO[List[String]]): Task[HarnessResult] =
       ZIO.foreach(calls)((name, arguments) => toolset.call(name, arguments).either)
         .map: results =>
           HarnessResult(s"$model: ${results.map(_.fold(_ => "failed", _ => "ok")).mkString(",")}", ModelUsage(1, 10, 2, 3, 30, 3))
@@ -129,14 +129,14 @@ object SonessAgentSpec extends ZIOSpecDefault:
     test("decision model, LLM model and web search: each a drill-down by provider, switched on its own; no search is noted once") {
       final case class Named(name: String) extends Harness:
         def run(prompt: String, toolset: Toolset, documents: Seq[com.jamesward.zio_decisions.orchestration.AgentLoop.Document],
-            context: Option[String], mode: HarnessMode, steering: UIO[List[String]]): Task[HarnessResult] =
+            context: Option[String], steering: UIO[List[String]]): Task[HarnessResult] =
           ZIO.succeed(HarnessResult(name, ModelUsage()))
       val decisions = List(HarnessCatalog.Choice("typesafe:jev-latest", "jev-latest", "Jev", "Jev"),
         HarnessCatalog.Choice("openai:gpt-6-luna", "gpt-6-luna", "OpenAI's", "OpenAI"))
       val searches = List(HarnessCatalog.Choice("kiro", "Kiro", "Kiro's", "Kiro"),
         HarnessCatalog.Choice("bedrock", "Bedrock (unavailable)", "Bedrock's", "Bedrock", Some("needs a GPT-5.4+ model on Mantle")))
       val composed = HarnessCatalog.composed(List("model-a", "acp:kiro"), decisions, searches,
-        HarnessCatalog.Selection(Some("typesafe:jev-latest"), "model-a", None), HarnessMode.Single,
+        HarnessCatalog.Selection(Some("typesafe:jev-latest"), "model-a", None),
         List(HarnessCatalog.Choice("acp:claude", "Claude (unavailable)", "Claude writes", "Claude", Some("set SONESS_ACP_AGENTS"))))(sel =>
           Some(Named(s"${sel.decision.getOrElse("")}|${sel.model}|${sel.search.getOrElse("none")}"))).toOption.get
       def set(agent: AgentConnection, session: SessionId, id: String, value: String) =
@@ -216,7 +216,7 @@ object SonessAgentSpec extends ZIOSpecDefault:
     },
     test("a failed turn answers the prompt with an error, and says which calls ran before it stopped") {
       val failing = new Harness:
-        def run(prompt: String, toolset: Toolset, documents: Seq[com.jamesward.zio_decisions.orchestration.AgentLoop.Document], context: Option[String], mode: HarnessMode, steering: UIO[List[String]]): Task[HarnessResult] =
+        def run(prompt: String, toolset: Toolset, documents: Seq[com.jamesward.zio_decisions.orchestration.AgentLoop.Document], context: Option[String], steering: UIO[List[String]]): Task[HarnessResult] =
           toolset.call("read_file", zio.json.ast.Json.Obj("path" -> zio.json.ast.Json.Str("nope.txt"))).ignore *>
             ZIO.fail(RuntimeException("Bedrock 400 Validation: bad"))
       for

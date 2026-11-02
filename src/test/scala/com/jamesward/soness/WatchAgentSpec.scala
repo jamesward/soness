@@ -18,7 +18,7 @@ object WatchAgentSpec extends ZIOSpecDefault:
 
   /** Starts a watch for "watch …" prompts; records every other prompt with its context; judges by `act`. */
   private final class Watcher(log: String, seen: Ref[Vector[(String, Option[String])]], act: Double) extends Harness:
-    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String], mode: HarnessMode,
+    def run(prompt: String, toolset: Toolset, documents: Seq[Document], context: Option[String],
         steering: UIO[List[String]]): Task[HarnessResult] =
       if prompt.startsWith("watch") then
         toolset.call("watch_log", Json.Obj("log" -> Json.Str(log), "instructions" -> Json.Str("improve soness from what you see")))
@@ -60,7 +60,7 @@ object WatchAgentSpec extends ZIOSpecDefault:
       updates <- Ref.make(Vector.empty[SessionUpdate])
       parent  <- ZIO.scope
       pipe    <- Transport.pipe
-      catalog  = HarnessCatalog.make(List("m" -> Watcher(log.toString, seen, act)), "m", HarnessMode.Single).toOption.get
+      catalog  = HarnessCatalog.make(List("m" -> Watcher(log.toString, seen, act)), "m").toOption.get
       _       <- AcpAgent.serve(pipe._1)(client => SonessAgent.make(client, http, catalog, parent)).forkScoped
       agent   <- AcpClient.connect(pipe._2, Updates(updates))
       _       <- agent.initialize(InitializeRequest(ProtocolVersion.V1, ClientCapabilities()))

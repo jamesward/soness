@@ -219,7 +219,7 @@ object HarnessSpec extends ZIOSpecDefault:
         fake     <- FakeJev.make(JevScript.callThenAnswer("list_orders"))
         requests <- Ref.make(Vector.empty[Json.Obj])
         llm      <- bedrock(requests, "done")
-        _        <- DecisionHarness(fake._1, BedrockLlmTransport(llm)).run("List C0046's orders.", toolset, List(skill, other), mode = HarnessMode.Single)
+        _        <- DecisionHarness(fake._1, BedrockLlmTransport(llm)).run("List C0046's orders.", toolset, List(skill, other))
         jevSeen  <- fake._2
         sent     <- requests.get
       yield assertTrue(

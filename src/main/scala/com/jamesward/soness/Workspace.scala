@@ -1,6 +1,6 @@
 package com.jamesward.soness
 
-import com.jamesward.zio_decisions.orchestration.{ParallelLoop, Sections}
+import com.jamesward.zio_decisions.orchestration.{Notices, ParallelLoop, Sections}
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
@@ -22,6 +22,13 @@ import java.time.Instant
  *    artifact's docs: read-only and fetching, or naming a group, artifact and version), is kept in
  *    `.soness/results/` for [[ttl]]; the same call from any session, any process, is answered from it, marked as such,
  *    and one made while the same call is in flight waits for that one rather than making its own.
+ *  - **Notices** ([[bus]], zio-decisions' `Notices`): the project's event log, followed as it grows (every soness
+ *    process's sessions append to it), is pushed to the loops it bears on: another task's edit of a file a loop read or
+ *    edited, another task's check that failed while the loop builds or edits. A loop's interests are what its calls
+ *    name ([[bind]]).
+ *  - **Edits from what was read**: an edit of a file that changed since the loop last read or wrote it (another task's
+ *    edit, in this process or another) isn't made: it fails at once with what changed, so the loop writes again on top
+ *    of it rather than over it.
  */
 final class Workspace private (
   root: Option[Path],
@@ -30,6 +37,10 @@ final class Workspace private (
   inFlight: Ref[Map[String, Promise[Throwable, Json]]],
   sequence: Ref[Long],
   ttl: Duration,
+  /** The notices the project's loops hear: from its event log ([[follow]]). */
+  val bus: Notices.Bus,
+  /** Each loop's view of a file: its text as the loop last read or wrote it. */
+  seen: Ref[Map[(String, String), String]],
 ):
   import Workspace.*
 
@@ -45,12 +56,50 @@ final class Workspace private (
     def shareable(name: String, arguments: Json.Obj) =
       readOnly(name) && (ToolCallView.kind(name, toolset.tools.find(_.name == name).flatMap(_.annotations)) ==
         com.jamesward.zioacp.schema.ToolKind.Fetch || Versioned.forall(arguments.contains))
+    def edits(name: String) =
+      ToolCallView.kind(name, toolset.tools.find(_.name == name).flatMap(_.annotations)) == com.jamesward.zioacp.schema.ToolKind.Edit
     new Toolset:
       val tools: Chunk[ToolSpec] = toolset.tools
       def call(name: String, arguments: Json.Obj): Task[Json] =
         ParallelLoop.currentLoop.get.flatMap: loop =>
-          val work = if shareable(name, arguments) then shared(name, arguments, loop, toolset.call(name, arguments)) else toolset.call(name, arguments)
-          recorded(loop, name, arguments, readOnly(name), work)
+          val file = fileOf(arguments)
+          val checks = !readOnly(name) && SharedTools.runs(name)
+          // what the call names is what the loop hears about from then on: its files, and the build when it edits or checks
+          val interests = file.map(subject).toSet ++ (if checks || edits(name) then Set(Build) else Set.empty)
+          val made = if shareable(name, arguments) then shared(name, arguments, loop, toolset.call(name, arguments)) else toolset.call(name, arguments)
+          val work =
+            if edits(name) then file.fold(made)(f => fromWhatWasRead(loop.getOrElse(""), f, made))
+            else if readOnly(name) then file.fold(made)(f => made.tap(_ => remember(loop.getOrElse(""), f)))
+            else made
+          Notices.interest(interests) *> recorded(loop, name, arguments, readOnly(name), work)
+
+  /**
+   * An edit of `file` by `loop`: made when the file is as the loop last read or wrote it (or the loop never has), else
+   * failed at once with what changed since, which the loop then has seen (its next edit goes through).
+   */
+  private def fromWhatWasRead(loop: String, file: Path, edit: Task[Json]): Task[Json] =
+    (seen.get.map(_.get((loop, subject(file)))) <*> text(file)).flatMap:
+      case (Some(before), now) if !now.contains(before) =>
+        remember(loop, file) *> ZIO.fail(Stale(file, EventLog.patchOf(file.getFileName.toString, Some(before), now)))
+      case _ => edit.tap(_ => remember(loop, file))
+
+  /** `file` as it is now, as `loop`'s view of it. */
+  private def remember(loop: String, file: Path): UIO[Unit] =
+    text(file).flatMap(t => seen.update(m => t.fold(m - ((loop, subject(file))))(v => m.updated((loop, subject(file)), v))))
+
+  /** A file's text, when it's one and not too large to keep. */
+  private def text(file: Path): UIO[Option[String]] =
+    ZIO.attemptBlocking(Option.when(Files.isRegularFile(file) && Files.size(file) < MaxSeen)(Files.readString(file, UTF_8))).orElseSucceed(None)
+
+  /**
+   * The project's event log, followed for as long as the scope lasts: each event that bears on other loops pushed on
+   * the [[bus]] as a notice (another task's edit of a file, its check that failed).
+   */
+  def follow: URIO[Scope, Unit] =
+    ZIO.foreachDiscard(root): r =>
+      EventLog.follow(EventLog.at(r).file).mapZIO(e => ZIO.foreachDiscard(notice(e))((from, kind, subjects, text) =>
+        bus.publish(from, kind, subjects, text))).runDrain
+        .catchAll(e => ZIO.logWarning(s"notices: following the event log stopped: ${message(e)}")).forkScoped.unit
 
   /** The activity log's entry for the call, running while it runs, then with how it ended. */
   private def recorded(loop: Option[String], name: String, arguments: Json.Obj, reads: Boolean, work: Task[Json]): Task[Json] =
@@ -218,6 +267,33 @@ object Workspace:
   /** A shared result: the call, when, by which task, and its result. */
   final case class Entry(tool: String, arguments: String, at: String, by: String, result: Json) derives JsonCodec
 
+  /** The build, as a notice's subject: a check's outcome bears on every loop that edits or checks. */
+  val Build = "<build>"
+
+  /** A loop keeps its view of a file this large at most (larger ones aren't checked). */
+  val MaxSeen = 2_000_000L
+
+  /** A file as a notice's subject: its real path when it has one. */
+  def subject(file: Path): String =
+    scala.util.Try(file.toRealPath().toString).getOrElse(file.toAbsolutePath.normalize.toString)
+
+  /** An edit not made: the file changed since the loop last saw it. */
+  final case class Stale(file: Path, patch: String) extends RuntimeException(
+    s"${Notices.OutOfDate}not edited, ${file.getFileName} changed since you last read it (another task's edit, now in the file). What changed:\n" +
+      cut(patch, 3000) + "\nWrite the edit again on top of the file as it is now; don't undo the other change.")
+
+  /** A logged event as a notice: by which loop, its kind, subjects and text; none for one that bears on no other loop. */
+  def notice(e: EventLog.Event): Option[(String, String, Set[String], String)] =
+    def from(session: String, task: Int, loop: String) = if loop.nonEmpty then loop else s"${session.take(8)}/task-$task"
+    e match
+      case c: EventLog.Event.FileChanged =>
+        val who = from(c.session, c.task, c.loop)
+        Some((who, "edit", Set(subject(Path.of(c.file))), s"[$who] edited ${c.file}:\n${cut(c.patch, 2500)}"))
+      case c: EventLog.Event.ToolCalled if !c.succeeded && (c.kind == "execute" || SharedTools.runs(c.tool)) =>
+        val who = from(c.session, c.task, c.loop)
+        Some((who, "check failed", Set(Build), s"[$who] ${c.title} failed:\n${cut(c.result, 2500)}"))
+      case _ => None
+
   def make(root: Option[Path]): UIO[Workspace] =
     for
       ttl      <- System.env("SONESS_SHARED_TTL_MINUTES").map(_.flatMap(_.trim.toLongOption)).orElseSucceed(None)
@@ -225,7 +301,9 @@ object Workspace:
       tasks    <- Ref.make(Map.empty[String, TaskInfo])
       inFlight <- Ref.make(Map.empty[String, Promise[Throwable, Json]])
       sequence <- Ref.make(0L)
-    yield Workspace(root, activity, tasks, inFlight, sequence, ttl.fold(DefaultTtl)(_.minutes))
+      bus      <- Notices.Bus.make
+      seen     <- Ref.make(Map.empty[(String, String), String])
+    yield Workspace(root, activity, tasks, inFlight, sequence, ttl.fold(DefaultTtl)(_.minutes), bus, seen)
 
   /** A loop's task: its first two parts (`e951b73f/task-1/main` is `e951b73f/task-1`). */
   def taskOf(loop: String): String = loop.split('/').take(2).mkString("/")

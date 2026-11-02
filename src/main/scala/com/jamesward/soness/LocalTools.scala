@@ -13,8 +13,11 @@ import scala.jdk.CollectionConverters.*
  * Which of them are offered is [[ToolResolver]]'s choice, by capability: an IDE's or client's tool that does the same
  * is always the one used, and these fill only the gaps.
  *
- *  - files: `read_file`, `list_files`, `search_text`, `edit_file` (an exact replacement, which the model writes far
- *    more reliably than a patch), `write_file`;
+ *  - files: `read_file` (a range, or a file's end), `list_directory` (a directory's entries with their sizes and
+ *    times, newest or largest first), `list_files` (by glob, sorted the same ways), `search_text` (matching lines, or
+ *    counts), `edit_file` (an exact replacement, which the model writes far more reliably than a patch), `write_file`.
+ *    They reach build output, logs and reports too (`target/`, …): the file tasks a shell would otherwise do (`ls`,
+ *    `find`, `grep`, `tail`, `wc`) are theirs;
  *  - `run_command`: a shell command in the project, its end awaited (the process's exit completes it: nothing polls),
  *    killed when stopped or past its timeout.
  *
@@ -36,17 +39,34 @@ object LocalTools:
 
   private val readOnly = Some(Json.Obj("readOnlyHint" -> Json.Bool(true)))
 
-  val Read = ToolSpec("read_file", "Reads a text file of the project: each line as its number, a tab, then the line itself. " +
-      s"Without line and limit it reads the whole file (up to $MaxText characters): read a range only of a file longer than that.",
+  val Read = ToolSpec("read_file", "Reads a text file of the project, a log or build output too: each line as its number, a " +
+      s"tab, then the line itself, with the file's line count and size. Without line, limit or tail it reads the whole file " +
+      s"(up to $MaxText characters): read a range, or its last lines (tail), of a file longer than that.",
     schema(List("path"), ("path", "string", "The file, relative to the project"), ("line", "integer", "The first line to read (1-based)"),
-      ("limit", "integer", "How many lines to read")), None, readOnly)
-  val ListFiles = ToolSpec("list_files", "Lists the project's files whose paths match a glob (`**/*.scala`, `src/**`), outside " +
-      "version-control, IDE and build-output directories.",
-    schema(List("glob"), ("glob", "string", "The glob, relative to the project")), None, readOnly)
+      ("limit", "integer", "How many lines to read"), ("tail", "integer", "Read the file's last this-many lines instead (a log's end)")),
+    None, readOnly)
+  val ListDirectory = ToolSpec("list_directory", "Lists a directory of the project, any of them (build output such as " +
+      "target/, logs, hidden directories): each entry with whether it's a file or a directory, its size in bytes and when " +
+      "it last changed, sorted by name, by modified (newest first) or by size (largest first). With depth, the entries of " +
+      "its subdirectories too.",
+    schema(Nil, ("path", "string", "The directory, relative to the project (default: the project's)"),
+      ("sort", "string", "name (default), modified (newest first) or size (largest first)"),
+      ("depth", "integer", "How many levels of subdirectories to list (default 1: only its own entries)"),
+      ("limit", "integer", "At most this many entries (default 200)")), None, readOnly)
+  val ListFiles = ToolSpec("list_files", "Lists the project's files whose paths match a glob (`**/*.scala`, `src/**`, " +
+      "`target/**/*.xml`), outside version-control and IDE directories, and outside build output unless the glob names it " +
+      "(`target/…`) or include_build_output; sorted by path, or by modified (newest first) or size (largest first) with each " +
+      "file's size and time.",
+    schema(List("glob"), ("glob", "string", "The glob, relative to the project"),
+      ("include_build_output", "boolean", "Also look in build-output directories (target/, build/, out/, …)"),
+      ("sort", "string", "path (default), modified (newest first) or size (largest first)")), None, readOnly)
   val Search = ToolSpec("search_text", "Searches the project's text files for a regular expression (case-sensitive unless it " +
-      "starts with (?i)); gives each matching line with its file and number.",
+      "starts with (?i)): each matching line with its file and number, or with count, how many lines match in each file. " +
+      "Build output and logs are searched when the glob names them (`target/logs/*.log`) or with include_build_output.",
     schema(List("pattern"), ("pattern", "string", "The regular expression (Java syntax)"),
-      ("glob", "string", "Only files whose paths match this glob")), None, readOnly)
+      ("glob", "string", "Only files whose paths match this glob (a single file's path searches only it)"),
+      ("include_build_output", "boolean", "Also search build-output directories (target/, build/, out/, …)"),
+      ("count", "boolean", "Give how many lines match in each file instead of the lines")), None, readOnly)
   val Edit = ToolSpec("edit_file", "Edits a file by replacing an exact piece of its text: `old_text` must occur in the file " +
       "exactly once (give enough surrounding lines to make it unique), unless `replace_all`.",
     schema(List("path", "old_text", "new_text"), ("path", "string", "The file, relative to the project"),
@@ -55,12 +75,14 @@ object LocalTools:
   val Write = ToolSpec("write_file", "Writes a whole file (created, with its directories, when it doesn't exist): for new files.",
     schema(List("path", "content"), ("path", "string", "The file, relative to the project"), ("content", "string", "The whole content")),
     None)
-  val Run = ToolSpec("run_command", "Runs a shell command in the project's directory (a build, the tests, git) and gives its " +
-      "exit code and output (stdout and stderr together; a long output keeps its end).",
+  val Run = ToolSpec("run_command", "Runs a shell command in the project's directory (a build, the tests, git, a program or " +
+      "script) and gives its exit code and output (stdout and stderr together; a long output keeps its end). Not for looking " +
+      "at files: listing, reading, searching and counting in files (logs and build output too) are the file tools' " +
+      "(list_directory, list_files, read_file, search_text).",
     schema(List("command"), ("command", "string", "The command, run by bash"),
       ("timeout_seconds", "integer", "Stop it after this many seconds (default 600)")), None)
 
-  private val FileTools = Chunk(Read, ListFiles, Search, Edit, Write)
+  private val FileTools = Chunk(Read, ListDirectory, ListFiles, Search, Edit, Write)
 
   private val directory = ("directory", "string", "A source dependency's directory (absolute) to work in instead of the project's")
 
@@ -88,11 +110,20 @@ object LocalTools:
         def relativeTo(p: Path) = roots.find(p.startsWith).fold(base.relativize(p))(_ => p).toString
         // a source dependency's files by their absolute paths (relative ones are the project's)
         def shown(d: Path)(f: String) = if d.equals(base) then f else d.resolve(f).toString
-        def listed(d: Path, g: String) = list(d, Some(g)).map(fs => Json.Obj("files" -> Json.Arr(fs.map(f => Json.Str(shown(d)(f)))*)))
+        def bool(k: String) = arguments.get(k).contains(Json.Bool(true))
+        def listed(d: Path, g: String) = list(d, Some(g), bool("include_build_output")).flatMap: fs =>
+          str("sort").map(_.trim.toLowerCase).filter(Set("modified", "size")) match
+            case None => ZIO.succeed(Json.Obj("files" -> Json.Arr(fs.map(f => Json.Str(shown(d)(f)))*)))
+            case Some(by) =>
+              ZIO.attemptBlocking(fs.map(f => entry(d.resolve(f), shown(d)(f)))).map(es =>
+                Json.Obj("files" -> Json.Arr(sorted(es, by).map(_.json)*)))
         name match
-          case "read_file"   => path("path").flatMap(read(_, int("line"), int("limit")))
-          case "list_files"  => (dir(false) <*> need("glob")).flatMap(listed)
-          case "search_text" => (dir(false) <*> need("pattern")).flatMap((d, p) => search(d, p, str("glob"), shown(d)))
+          case "read_file"      => path("path").flatMap(read(_, int("line"), int("limit"), int("tail")))
+          case "list_directory" => inside(base, str("path").filter(_.trim.nonEmpty).getOrElse("."), roots).flatMap(d =>
+                                     directoryListing(d, relativeTo, str("sort"), int("depth").getOrElse(1), int("limit").getOrElse(200)))
+          case "list_files"     => (dir(false) <*> need("glob")).flatMap(listed)
+          case "search_text"    => (dir(false) <*> need("pattern")).flatMap((d, p) =>
+                                     search(d, p, str("glob"), shown(d), bool("include_build_output"), bool("count")))
           case "edit_file"   =>
             (path("path") <*> need("old_text") <*> need("new_text")).flatMap((p, o, n) =>
               edit(p, o, n, arguments.get("replace_all").contains(Json.Bool(true))).as(Json.Obj("edited" -> Json.Str(relativeTo(p)))))
@@ -176,15 +207,53 @@ object LocalTools:
     tool.copy(inputSchema = tool.inputSchema.add("properties", props.add(directory._1,
       Json.Obj("type" -> Json.Str(directory._2), "description" -> Json.Str(directory._3)))))
 
-  private def read(file: Path, line: Option[Int], limit: Option[Int]): Task[Json] =
+  private def read(file: Path, line: Option[Int], limit: Option[Int], tail: Option[Int] = None): Task[Json] =
     missing(file).flatMap(ZIO.foreachDiscard(_)(why => ZIO.fail(IllegalArgumentException(why)))) *>
-    ZIO.attemptBlocking(Files.readAllLines(file, UTF_8).asScala.toVector).map: lines =>
-      val from = line.getOrElse(1).max(1)
-      val shown = lines.drop(from - 1).take(limit.getOrElse(Int.MaxValue))
+    ZIO.attemptBlocking((lines(file), Files.size(file))).map: (lines, bytes) =>
+      val from = tail.fold(line.getOrElse(1).max(1))(n => (lines.size - n.max(0)).max(0) + 1)
+      val shown = lines.drop(from - 1).take(tail.fold(limit.getOrElse(Int.MaxValue))(_ => Int.MaxValue))
       // a tab after the number: the line's own indentation starts right after it, unambiguously
       val text = shown.zipWithIndex.map((l, i) => f"${from + i}%6d\t$l").mkString("\n")
       Json.Obj("text" -> Json.Str(if text.length > MaxText then text.take(MaxText) + s"\n… (cut; read on from a later line)" else text),
-        "lines" -> Json.Num(lines.size))
+        "lines" -> Json.Num(lines.size), "bytes" -> Json.Num(bytes))
+
+  /** A file's lines, as text (a byte that isn't UTF-8, in a log or a binary, read as a replacement character, not an error). */
+  private def lines(file: Path): Vector[String] =
+    val decoder = UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE)
+      .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPLACE)
+    val reader = java.io.BufferedReader(java.io.InputStreamReader(Files.newInputStream(file), decoder))
+    try reader.lines().iterator().asScala.toVector finally reader.close()
+
+  /** A directory entry: its path as shown, whether it's a directory, its size and last change. */
+  final case class Entry(shown: String, directory: Boolean, bytes: Long, modified: Long):
+    def json: Json = Json.Obj("path" -> Json.Str(if directory then shown + "/" else shown),
+      "type" -> Json.Str(if directory then "directory" else "file"), "bytes" -> Json.Num(bytes),
+      "modified" -> Json.Str(java.time.Instant.ofEpochMilli(modified).toString))
+
+  private def entry(p: Path, shown: String): Entry =
+    val attrs = Files.readAttributes(p, classOf[java.nio.file.attribute.BasicFileAttributes])
+    Entry(shown, attrs.isDirectory, if attrs.isDirectory then 0L else attrs.size, attrs.lastModifiedTime.toMillis)
+
+  /** Entries sorted by `by`: modified newest first, size largest first, else by path. */
+  def sorted(entries: List[Entry], by: String): List[Entry] = by match
+    case "modified" => entries.sortBy(e => (-e.modified, e.shown))
+    case "size"     => entries.sortBy(e => (-e.bytes, e.shown))
+    case _          => entries.sortBy(_.shown)
+
+  /**
+   * `dir`'s entries (to `depth` levels, every directory included: build output, hidden ones), sorted, at most `limit`;
+   * each by its path as the file tools take it (`shown`: relative to the project), so the next call can use it as it is.
+   */
+  private def directoryListing(dir: Path, shownAs: Path => String, sort: Option[String], depth: Int, limit: Int): Task[Json] =
+    val shown = shownAs(dir)
+    ZIO.attemptBlocking(Files.isDirectory(dir)).flatMap: isDir =>
+      if !isDir then missing(dir).flatMap(why => ZIO.fail(IllegalArgumentException(why.getOrElse(s"$shown is a file, not a directory"))))
+      else ZIO.attemptBlocking:
+        val s = Files.walk(dir, depth.max(1))
+        val all = try s.iterator.asScala.filterNot(_.equals(dir)).map(p => entry(p, shownAs(p))).toList finally s.close()
+        val kept = sorted(all, sort.map(_.trim.toLowerCase).getOrElse("name"))
+        Json.Obj("directory" -> Json.Str(if shown.isEmpty then "." else shown), "entries" -> Json.Arr(kept.take(limit.max(1)).map(_.json)*),
+          "count" -> Json.Num(all.size), "note" -> Json.Str(if all.size > limit then s"the first $limit of ${all.size}; raise limit or narrow path" else ""))
 
   /**
    * Why `file` can't be read, when it can't: it doesn't exist (with the files of the nearest directory that does, the
@@ -266,15 +335,25 @@ object LocalTools:
     val named = !g.contains('/')
     rel => matchers.exists(_.matches(rel)) || (named && Option(rel.getFileName).exists(n => matchers.exists(_.matches(n))))
 
-  /** The project's files (relative), outside skipped directories, matching `glob` when given; at most 2000. */
-  private def list(base: Path, glob: Option[String]): Task[List[String]] =
+  /**
+   * The project's files (relative), outside skipped directories, matching `glob` when given; at most 2000. A skipped
+   * directory on the glob's literal start (`target/logs/soness-goal.log` names `target` and `target/logs`) is listed: the glob
+   * asks for it by name (a debug log, a build's output).
+   */
+  private def list(base: Path, glob: Option[String], buildOutput: Boolean = false): Task[List[String]] =
     ZIO.attemptBlocking:
       val matcher = glob.map(globMatcher(base, _))
+      // the directories the glob names before its first wildcard: `target/logs/` of `target/logs/*.log`
+      val literal = glob.fold("")(_.trim.stripPrefix("./").takeWhile(c => !"*?[{".contains(c)))
+      val named = literal.take(literal.lastIndexOf('/') + 1)
+      def asked(dir: Path) = named.nonEmpty && named.startsWith(base.relativize(dir).toString.replace('\\', '/') + "/")
       val found = List.newBuilder[String]
       var count = 0
       Files.walkFileTree(base, new java.nio.file.SimpleFileVisitor[Path]:
         override def preVisitDirectory(dir: Path, attrs: java.nio.file.attribute.BasicFileAttributes) =
-          if !dir.equals(base) && ProjectContext.Skipped(dir.getFileName.toString) then java.nio.file.FileVisitResult.SKIP_SUBTREE
+          val name = dir.getFileName.toString
+          val skipped = if buildOutput then ProjectContext.Unlisted(name) else ProjectContext.Skipped(name)
+          if !dir.equals(base) && skipped && !asked(dir) then java.nio.file.FileVisitResult.SKIP_SUBTREE
           else java.nio.file.FileVisitResult.CONTINUE
         override def visitFile(file: Path, attrs: java.nio.file.attribute.BasicFileAttributes) =
           val rel = base.relativize(file)
@@ -284,17 +363,25 @@ object LocalTools:
           if count >= 2000 then java.nio.file.FileVisitResult.TERMINATE else java.nio.file.FileVisitResult.CONTINUE)
       found.result().sorted
 
-  private def search(base: Path, pattern: String, glob: Option[String], shown: String => String = identity): Task[Json] =
+  private def search(base: Path, pattern: String, glob: Option[String], shown: String => String = identity,
+      buildOutput: Boolean = false, count: Boolean = false): Task[Json] =
     for
       regex <- ZIO.attempt(java.util.regex.Pattern.compile(pattern)).mapError(e => IllegalArgumentException(s"bad pattern: ${e.getMessage}"))
-      files <- list(base, glob)
-      hits  <- ZIO.attemptBlocking:
-                 files.iterator.flatMap: f =>
-                   scala.util.Try(Files.readAllLines(base.resolve(f), UTF_8).asScala).toOption.iterator.flatMap: lines =>
-                     lines.iterator.zipWithIndex.collect { case (l, i) if regex.matcher(l).find() => s"${shown(f)}:${i + 1}: ${l.take(300)}" }
-                 .take(200).toList
-    yield Json.Obj("matches" -> Json.Arr(hits.map(Json.Str(_))*), "count" -> Json.Num(hits.size),
-      "note" -> Json.Str(if hits.size >= 200 then "the first 200 matches; narrow the pattern or glob" else ""))
+      files <- list(base, glob, buildOutput)
+      text   = (f: String) => scala.util.Try(lines(base.resolve(f))).toOption.filterNot(_.exists(_.contains('\u0000')))
+      found <- ZIO.attemptBlocking:
+                 if count then
+                   files.flatMap(f => text(f).map(ls => f -> ls.count(l => regex.matcher(l).find()))).filter(_._2 > 0)
+                     .map((f, n) => Json.Obj("file" -> Json.Str(shown(f)), "lines" -> Json.Num(n)): Json)
+                 else
+                   files.iterator.flatMap: f =>
+                     text(f).iterator.flatMap(_.iterator.zipWithIndex.collect { case (l, i) if regex.matcher(l).find() =>
+                       Json.Str(s"${shown(f)}:${i + 1}: ${l.take(300)}"): Json })
+                   .take(200).toList
+    yield
+      if count then Json.Obj("counts" -> Json.Arr(found*), "total" -> Json.Num(found.flatMap(_.asObject).flatMap(_.get("lines")).flatMap(_.asNumber).map(_.value.intValue).sum))
+      else Json.Obj("matches" -> Json.Arr(found*), "count" -> Json.Num(found.size),
+        "note" -> Json.Str(if found.size >= 200 then "the first 200 matches; narrow the pattern or glob, or use count" else ""))
 
   /**
    * `command` by bash in `base`: its output to a temporary file (no pipe to drain), its exit awaited through the

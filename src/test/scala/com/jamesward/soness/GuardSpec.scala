@@ -43,6 +43,11 @@ object GuardSpec extends ZIOSpecDefault:
         kind(cmd("tr '\\0' '\\n' < /proc/604473/environ")).contains("Ask"), kind(cmd("cat ~/.aws/credentials")).contains("Ask"),
         kind(rule("read_file", "file_path" -> "/home/u/.ssh/id_ed25519")).contains("Ask"), kind(cmd("env")).isEmpty,
         kind(Guard.rules(Some(spec("drop_table", "destructiveHint" -> true)), "drop_table", Json.Obj(), Some(root), deps)).contains("Ask"),
+        // a build or a test run through a tool its server marks destructive (sbta's sbt-task) runs; a publish is still asked
+        kind(Guard.rules(Some(spec("sbt-task", "destructiveHint" -> true)), "sbt-task", Json.Obj("command" -> Json.Str("compile")), Some(root), deps)).contains("Allow"),
+        kind(Guard.rules(Some(spec("sbt-task", "destructiveHint" -> true)), "sbt-task", Json.Obj("command" -> Json.Str("Test / compile")), Some(root), deps)).contains("Allow"),
+        kind(Guard.rules(Some(spec("sbt-task", "destructiveHint" -> true)), "sbt-task", Json.Obj("command" -> Json.Str("publishLocal")), Some(root), deps)).contains("Ask"),
+        kind(Guard.rules(Some(spec("sbt-task", "destructiveHint" -> true)), "sbt-task", Json.Obj("command" -> Json.Str("reload")), Some(root), deps)).contains("Ask"),
         kind(rule("mystery_tool")).isEmpty,
         // a JetBrains router's execute_tool: judged by the routed tool, not as a shell command
         kind(rule("execute_tool", "command" -> "read_file --file_path 'build.sbt'")).contains("Allow"),

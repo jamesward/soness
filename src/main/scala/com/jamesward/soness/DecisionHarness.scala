@@ -20,11 +20,11 @@ final class DecisionHarness(
 ) extends Harness:
 
   def run(prompt: String, toolset: Toolset, documents: Seq[AgentLoop.Document] = Nil, context: Option[String] = None,
-      mode: HarnessMode = HarnessMode.Auto, steering: UIO[List[String]] = ZIO.succeed(Nil)): Task[HarnessResult] =
-    runInProject(prompt, toolset, documents, context, mode, steering, ZIO.succeed(Sections.empty))
+      steering: UIO[List[String]] = ZIO.succeed(Nil)): Task[HarnessResult] =
+    runInProject(prompt, toolset, documents, context, steering, ZIO.succeed(Sections.empty))
 
   override def runInProject(prompt: String, toolset: Toolset, documents: Seq[AgentLoop.Document], context: Option[String],
-      mode: HarnessMode, steering: UIO[List[String]], shared: UIO[Sections]): Task[HarnessResult] =
+      steering: UIO[List[String]], shared: UIO[Sections]): Task[HarnessResult] =
     val tools = toolset.tools.map: t =>
       // a tool that only shows the user something does no work for the request: said so, so it's chosen only when asked for
       val description = if t.name == "open_file_in_editor" then t.description + " It only shows the file to the user and reads " +
@@ -49,33 +49,8 @@ final class DecisionHarness(
           ZIO.foreachDiscard(read.collect { case (d, Left(e)) => d -> e })((d, e) => ZIO.logWarning(s"skill ${d.title}: ${e.getMessage}")) *>
             ZIO.logInfo(s"skills loaded for this request: ${read.collect { case (d, Right(_)) => d.title }.mkString(", ")}" +
               s" (of ${skills.size})").unless(sections.isEmpty) *>
-            runWith(prompt, toolset, tools, offered.map(_._1) ++ linked, context, mode,
+            runParallel(prompt, toolset, tools, offered.map(_._1) ++ linked, context,
               steering.zipWith(shared)((s, others) => sections ++ Harness.steering(s) ++ others))
-
-  private def runWith(prompt: String, toolset: Toolset, tools: Seq[AgentLoop.Tool], documents: Seq[AgentLoop.Document],
-      context: Option[String], mode: HarnessMode, live: UIO[Sections]): Task[HarnessResult] =
-    if mode == HarnessMode.Parallel then runParallel(prompt, toolset, tools, documents, context, live, auto = false)
-    else if mode == HarnessMode.Auto then runParallel(prompt, toolset, tools, documents, context, live, auto = true)
-    else
-      AgentLoop.run(prompt, tools, toolset.call(_, _), llm, config, documents, context, live).provideEnvironment(decisions)
-        .tap(result => ZIO.logInfo(s"context: left out the results of steps ${result.leftOut.toList.sorted.mkString(", ")} of ${result.steps.size}")
-          .when(result.leftOut.nonEmpty))
-        .map: result =>
-          HarnessResult(
-            result.reply,
-            ModelUsage(
-              llmCalls = result.llmCalls,
-              llmInputTokens = result.llmInputTokens,
-              llmOutputTokens = result.llmOutputTokens,
-              jevCalls = result.decisions.size,
-              jevInputTokens = result.decisionUsage.inputTokens.toLong,
-              jevOutputTokens = result.decisionUsage.outputTokens.toLong,
-              jevLatencyMs = result.decisionLatencyMs,
-              llmLatencyMs = result.llmLatencyMs,
-              toolLatencyMs = result.toolLatencyMs,
-            ),
-            DecisionHarness.ending(result.ending),
-          )
 
   /** Jev's route for a message that arrives while tasks run ([[Interjection]]). */
   override def route(message: String, running: List[Interjection.Running], context: Option[String],
@@ -103,19 +78,19 @@ final class DecisionHarness(
     llm.status(question, tree).map(answer => s"$answer\n\n$tree")
 
   /**
-   * [[ParallelLoop]]: the request's parts at the same time. The toolset keeps their edits and builds from colliding
+   * [[ParallelLoop]]: what can run at the same time does. A request made of independent parts is split and its parts
+   * worked on at the same time; one that isn't is one loop. The toolset keeps their edits and builds from colliding
    * ([[SharedTools]], the session's, which the agent gives every turn).
    */
   private def runParallel(prompt: String, toolset: Toolset, tools: Seq[AgentLoop.Tool], documents: Seq[AgentLoop.Document],
-      context: Option[String], live: UIO[Sections], auto: Boolean): Task[HarnessResult] =
+      context: Option[String], live: UIO[Sections]): Task[HarnessResult] =
     ZIO.scoped:
       for
         reads   = SharedTools.reads(toolset.tools)
         report  <- ClientTools.currentPlan.get
         parallel = ParallelLoop.Config(loop = config, readOnly = t => reads(t.name), workTools = t => !DecisionHarness.ShowsUser(t.name) && !config.endsTurn(t),
                      progress = report, maxParallel = config.maxParallel)
-        result <- (if auto then ParallelLoop.auto(prompt, tools, toolset.call(_, _), llm, parallel, documents, context, live)
-                   else ParallelLoop.run(prompt, tools, toolset.call(_, _), llm, parallel, documents, context, live))
+        result <- ParallelLoop.auto(prompt, tools, toolset.call(_, _), llm, parallel, documents, context, live)
                     .provideEnvironment(decisions)
         _      <- ZIO.logInfo(s"parallel: ${result.plan.fold("no plan")(p => s"${p.parts.size} parts (${p.parts.map(_.name).mkString(", ")})")}; " +
                     result.parts.map((n, e, ms) => s"$n ${DecisionHarness.ending(e)} in ${ms}ms").mkString(", "))

@@ -23,6 +23,10 @@ object ProjectContext:
   private[soness] val Skipped = Set(".git", ".hg", ".svn", ".idea", ".bsp", ".bloop", ".metals", ".vscode", ".gradle", ".kiro",
     ".claude", ".agents", "node_modules", "target", "build", "dist", "out", "__pycache__", ".venv", "venv", ".soness")
 
+  /** What's never listed, even when build output is asked for: version control and IDE metadata, installed dependencies. */
+  private[soness] val Unlisted = Set(".git", ".hg", ".svn", ".idea", ".bsp", ".bloop", ".metals", ".vscode", ".gradle",
+    "node_modules", "__pycache__", ".venv", "venv")
+
   private val BuildFiles = List(
     "build.sbt" -> "sbt (Scala)", "pom.xml" -> "Maven", "build.gradle" -> "Gradle", "build.gradle.kts" -> "Gradle (Kotlin)",
     "package.json" -> "npm", "Cargo.toml" -> "Cargo (Rust)", "go.mod" -> "Go modules", "pyproject.toml" -> "Python",
@@ -38,6 +42,9 @@ object ProjectContext:
 
   /** The standard agent instructions file (https://agents.md). */
   private val InstructionFiles = List("AGENTS.md")
+
+  /** What the agent instructions start with in the context (the writer's prompts leave them out: [[WritingPrompts.project]]). */
+  val InstructionsHeading = "\n\nThe project's agent instructions ("
 
   /** The project's agent instructions (`AGENTS.md` at `cwd`), whole; empty when there are none. */
   def instructions(cwd: Path): UIO[String] =
@@ -77,7 +84,7 @@ object ProjectContext:
     val more = if files.size > MaxFiles then s"\n… and ${files.size - MaxFiles} more files" else ""
     val instructions = notes.map: (file, text) =>
       val cut = if text.length > MaxInstructions then text.take(MaxInstructions) + "\n… (cut)" else text
-      s"\n\nThe project's agent instructions ($file):\n$cut"
+      s"$InstructionsHeading$file):\n$cut"
     s"""Project directory: $root
        |Build: ${if builds.isEmpty then "none recognized" else builds.mkString(", ")}
        |Languages: ${if languages.isEmpty then "none recognized" else languages.mkString(", ")}

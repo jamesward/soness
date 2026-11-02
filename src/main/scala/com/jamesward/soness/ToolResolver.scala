@@ -14,11 +14,15 @@ import zio.schema.{Schema, derived}
 object ToolResolver:
 
   /** The capabilities every session should have. */
+  /**
+   * What a session's tools can do. `Command` is running a program or a command line (to measure, reproduce, or look at
+   * what's outside the project's sources: logs, build output): only a shell covers it.
+   */
   enum Capability derives Schema, CanEqual:
-    case WebSearch, WebFetch, FileRead, FileWrite, FilePatch, FileFind, TextSearch, Build
+    case WebSearch, WebFetch, FileRead, FileWrite, FilePatch, FileFind, DirectoryList, TextSearch, Build, Command
 
   /** Capabilities a session may lack without a shell standing in for them. */
-  val AllowedGaps: Set[Capability] = Set(Capability.WebSearch)
+  val AllowedGaps: Set[Capability] = Set(Capability.WebSearch, Capability.DirectoryList)
 
   enum ToolSource derives CanEqual:
     /** An IDE's MCP server (a JetBrains IDE's, direct or routed). */
@@ -106,27 +110,30 @@ object ToolResolver:
   /**
    * Resolves `candidates` (in catalog order within a source): each capability bound to its best tool; every MCP tool
    * offered; an implicit tool offered when it's a capability's binding or covers no capability (an extra), hidden
-   * otherwise; an implicit shell (the ACP client's first, then the local one) offered only when a required capability
-   * outside [[AllowedGaps]] is left uncovered and no MCP server has a shell. An implicit tool named as an offered MCP
-   * tool is dropped.
+   * otherwise; an implicit shell (the ACP client's first, then the local one) offered when no MCP server has a shell:
+   * work needs to run things (a measurement, a reproduction, a look at logs) that no other tool does, so `Command` is
+   * always covered, by an MCP server's shell or by it. An implicit tool named as an offered MCP tool is dropped.
    */
   def resolve(candidates: List[Candidate], c: Catalog = catalog): Resolution =
     val caps = candidates.map(t => t -> c.capabilities(t.family, t.name)).toMap
-    val coverage = Capability.values.toList.flatMap: cap =>
+    val coverage0 = Capability.values.toList.filterNot(_ == Capability.Command).flatMap: cap =>
       candidates.zipWithIndex.filter((t, _) => caps(t)(cap)).sortBy((t, i) => (rank(cap, t.source), i)).headOption.map(cap -> _._1)
     .toMap
-    val bound = coverage.values.toSet
+    val bound = coverage0.values.toSet
     val mcp = candidates.filter(_.source.alwaysOffered)
     val mcpNames = mcp.map(_.name).toSet
-    val uncovered = Capability.values.toSet -- coverage.keySet -- AllowedGaps
-    val mcpShell = mcp.exists(t => c.shell(t.family, t.name))
+    val mcpShells = mcp.filter(t => c.shell(t.family, t.name))
+    val mcpShell = mcpShells.nonEmpty
+    val uncovered = Capability.values.toSet -- coverage0.keySet -- AllowedGaps -- (if mcpShell then Set(Capability.Command) else Set.empty)
     val implicitShells = candidates.filter(t => !t.source.alwaysOffered && c.shell(t.family, t.name))
     val shell = Option.when(uncovered.nonEmpty && !mcpShell)(implicitShells.sortBy(_.source.ordinal).headOption).flatten
+    val coverage = coverage0 ++ (mcpShells.headOption orElse shell).map(Capability.Command -> _)
     val decided = candidates.filterNot(_.source.alwaysOffered).map: t =>
       if mcpNames(t.name) then Left(t -> s"an MCP server's tool has its name")
       else if c.shell(t.family, t.name) then
         if shell.contains(t) then Right(t.copy(spec = t.spec.copy(description = t.spec.description +
-          s" Use it only for what no other tool does: ${uncovered.toList.sortBy(_.ordinal).mkString(", ")}.")))
+          s" Use it only for what no other tool does: ${uncovered.toList.sortBy(_.ordinal).map(shellFor).mkString(", ")}. " +
+          "Listing, reading, searching and counting in files (logs and build output too) is the file tools' work, not the shell's.")))
         else Left(t -> (if mcpShell then "an MCP server has a shell" else if uncovered.isEmpty then "every capability is covered" else "another shell is offered"))
       else if caps(t).isEmpty || bound(t) then Right(t)
       else Left(t -> s"covered by ${caps(t).toList.sortBy(_.ordinal).flatMap(coverage.get).map(_.name).distinct.mkString(", ")}")
@@ -134,6 +141,11 @@ object ToolResolver:
     val implicitOffered = decided.collect { case Right(t) => t }.foldLeft(List.empty[Candidate])((acc, t) =>
       if acc.exists(_.name == t.name) then acc else acc :+ t)
     Resolution(coverage, mcp ++ implicitOffered, decided.collect { case Left(h) => h }, Option.when(shell.isDefined)(uncovered))
+
+  /** What the shell does for a capability, in its description. */
+  private def shellFor(c: Capability): String = c match
+    case Capability.Command => "running programs and commands (to measure or time something, reproduce a problem, or look at logs and build output)"
+    case other              => other.toString
 
   /** A server with more tools than this whose family the catalog doesn't group has them all in one group. */
   val GroupServerAbove = 8

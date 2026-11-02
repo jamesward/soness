@@ -14,16 +14,25 @@ skillsJarsOutputDir := Some(file(".agents/skills"))
 
 val zioVersion = "2.1.27"
 
-// Development: zio-acp, zio-bedrock, zio-http-mcp, zio-decisions and (for tests) zio-evals from sibling checkouts
-// until their fixes are released (see AGENTS.md). zio-evals takes its own zio-decisions from the sibling checkout
-// too only with `-Dlocal`, which `.sbtopts` sets.
-lazy val zioAcp = RootProject(file("../zio-acp"))
-lazy val zioBedrock = RootProject(file("../zio-bedrock"))
-lazy val zioHttpMcp = RootProject(file("../zio-http-mcp"))
-lazy val zioDecisions = RootProject(file("../zio-decisions"))
-lazy val zioEvals = RootProject(file("../zio-evals"))
+// `./sbta -Dlocal …` builds against the sibling checkouts (../zio-acp, ../zio-bedrock, ../zio-http-mcp,
+// ../zio-decisions, ../zio-evals) instead of their releases, to change a library and soness together (see AGENTS.md)
+val useLocal = sys.props.contains("local")
+val localCheckouts = Seq("zio-acp", "zio-bedrock", "zio-http-mcp", "zio-decisions").map(name => file("..") / name)
+val localEvals = file("..") / "zio-evals"
 
-lazy val root = (project in file(".")).dependsOn(zioAcp, zioBedrock, zioHttpMcp, zioDecisions, zioEvals % "test->compile")
+lazy val root = (project in file(".")).dependsOn(
+  (if useLocal then localCheckouts.map(dir => RootProject(dir): ClasspathDep[ProjectReference]) :+
+    (RootProject(localEvals) % "test->compile")
+  else Nil) *
+)
+
+libraryDependencies ++= (if useLocal then Nil else Seq(
+  "com.jamesward" %% "zio-acp"       % "0.1.0",
+  "com.jamesward" %% "zio-bedrock"   % "0.2.0",
+  "com.jamesward" %% "zio-http-mcp"  % "0.12.0",
+  "com.jamesward" %% "zio-decisions" % "0.2.0",
+  "com.jamesward" %% "zio-evals"     % "0.3.0" % Test,
+))
 
 libraryDependencies ++= Seq(
   "dev.zio"       %% "zio"             % zioVersion,
@@ -33,7 +42,7 @@ libraryDependencies ++= Seq(
   "dev.zio"       %% "zio-test"     % zioVersion % Test,
   "dev.zio"       %% "zio-test-sbt" % zioVersion % Test,
 
-  "com.jamesward" % "skills" % "0.0.17" % Skills,
+  "com.jamesward" % "skills" % "0.0.21" % Skills,
 
   // the log explorer's (test code, `LogExplorer`): Tailwind's browser build, served from the test classpath
   "org.webjars.npm" % "tailwindcss__browser" % "4.3.3" % Set(WebJar, Test),

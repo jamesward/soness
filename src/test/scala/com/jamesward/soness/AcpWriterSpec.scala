@@ -13,8 +13,10 @@ object AcpWriterSpec extends ZIOSpecDefault:
 
   /** Answers arguments prompts with fenced JSON in two chunks, other prompts with text; asks for a permission first. */
   private final class Fake(client: ClientConnection, prompts: Ref[Vector[(SessionId, String)]], permissions: Ref[Vector[String]],
-      opened: Ref[Int] = Unsafe.unsafely(Ref.unsafe.make(0)), slow: Duration = Duration.Zero) extends Agent:
+      opened: Ref[Int] = Unsafe.unsafely(Ref.unsafe.make(0)), slow: Duration = Duration.Zero,
+      closed: Ref[Vector[SessionId]] = Unsafe.unsafely(Ref.unsafe.make(Vector.empty[SessionId]))) extends Agent:
     def initialize(request: InitializeRequest) = ZIO.succeed(InitializeResponse(ProtocolVersion.V1))
+    override def closeSession(request: CloseSessionRequest) = closed.update(_ :+ request.sessionId).as(CloseSessionResponse())
     def newSession(request: NewSessionRequest) = opened.update(_ + 1) *> Random.nextUUID.map(u => NewSessionResponse(SessionId(u.toString)))
     def prompt(request: PromptRequest, turn: PromptTurn): IO[RpcError, PromptResponse] =
       val text = request.prompt.collect { case ContentBlock.Text(t, _, _) => t }.mkString
@@ -32,7 +34,7 @@ object AcpWriterSpec extends ZIOSpecDefault:
     "properties" -> Json.Obj("path" -> Json.Obj("type" -> Json.Str("string"))), "required" -> Json.Arr(Json.Str("path"))))
 
   def spec = suite("ACP writer")(
-    test("arguments from the agent's text (fenced, in chunks, prose around); a reply as its text; one session for a loop's writings; permissions refused") {
+    test("arguments from the agent's text (fenced, in chunks, prose around); a reply as its text; each writing in a clean session; permissions refused") {
       for
         prompts     <- Ref.make(Vector.empty[(SessionId, String)])
         permissions <- Ref.make(Vector.empty[String])
@@ -46,34 +48,31 @@ object AcpWriterSpec extends ZIOSpecDefault:
       yield assertTrue(
         args.value.toJson == """{"path":"A.java"}""", args.inputTokens == 20, args.outputTokens == 10,
         reply.value == "The file is **A.java**.",
-        // one loop's writings, one after the other: one session, the second told it's a new request
-        asked.size == 2, asked.map(_._1).distinct.size == 1, asked(1)._2.startsWith(AcpWriter.FollowOn),
+        // one after the other, each in a session of its own, with only its own prompt
+        asked.size == 2, asked.map(_._1).distinct.size == 2, asked(1)._2.startsWith("You"),
         asked.head._2.contains("read_file"), asked.head._2.contains("Don't use any tool"),
         refused.forall(_.contains("Cancelled")),
       )
     },
-    test("sessions kept warm: one per loop, another for a writing while the loop's is busy, retired after MaxUses") {
+    test("every writing in a clean session, made ahead and closed once answered; writings at the same time each in their own") {
       import com.jamesward.zio_decisions.orchestration.ParallelLoop
       for
         prompts     <- Ref.make(Vector.empty[(SessionId, String)])
         permissions <- Ref.make(Vector.empty[String])
         opened      <- Ref.make(0)
+        closed      <- Ref.make(Vector.empty[SessionId])
         pipe        <- Transport.pipe
-        _           <- AcpAgent.serve(pipe._1)(c => ZIO.succeed(Fake(c, prompts, permissions, opened, 200.millis))).forkScoped
+        _           <- AcpAgent.serve(pipe._1)(c => ZIO.succeed(Fake(c, prompts, permissions, opened, 100.millis, closed))).forkScoped
         writer      <- AcpWriter.over("fake", pipe._2, WritingPrompts())
         reply        = writer.reply(ReplyRequest("read A", Vector.empty, Ending.Answered))
-        inLoop       = (name: String) => (z: Task[Any]) => ParallelLoop.currentLoop.locally(Some(name))(z)
-        _           <- inLoop("t/task-1/main")(reply *> reply)
-        _           <- inLoop("t/task-1/part-a")(reply)
-        _           <- inLoop("t/task-1/main")(reply.zipPar(reply))
-        main1       <- prompts.get.map(ps => ps.take(2).map(_._1).distinct.size == 1 && ps(2)._1 != ps.head._1)
-        _           <- prompts.set(Vector.empty)
-        _           <- inLoop("t/task-2/main")(ZIO.foreachDiscard(1 to AcpWriter.MaxUses + 1)(_ => reply))
-        retired     <- prompts.get.map(ps => (ps.take(AcpWriter.MaxUses).map(_._1).distinct.size, ps.last._1 != ps.head._1))
+        _           <- ParallelLoop.currentLoop.locally(Some("t/task-1/main"))(reply *> reply *> reply.zipPar(reply))
+        asked       <- prompts.get
+        _           <- closed.get.repeatUntil(_.size == 4).timeout(5.seconds)
+        shut        <- closed.get
         made        <- opened.get
-      yield assertTrue(main1, retired == (1, true),
-        // main's, part-a's, the busy writing's, task-2's two, and a spare made ahead each time one is taken
-        made <= 8)
+      yield assertTrue(asked.map(_._1).distinct.size == 4, shut.toSet == asked.map(_._1).toSet,
+        // the four, and a spare made ahead after each was taken
+        made <= 5 + 1)
     } @@ TestAspect.withLiveClock,
     test("a writing leaves the loop's FiberRefs its own: the spare session another loop started doesn't bring that loop's") {
       import com.jamesward.zio_decisions.orchestration.ParallelLoop
@@ -146,6 +145,29 @@ object AcpWriterSpec extends ZIOSpecDefault:
       yield assertTrue(answer == "- [ZIO](https://zio.dev) — Type-safe.\n- [https://github.com/zio/zio](https://github.com/zio/zio)",
         AcpWriter.searchResults(Json.Obj("items" -> Json.Arr())).isEmpty)
     } @@ TestAspect.withLiveClock,
+    test("Kiro writes with Sonnet unless its command names a model; other agents' commands are as given") {
+      import com.jamesward.zioacp.AgentCommand
+      val (kiro, model) = AcpWriter.launched(AgentCommand("kiro-cli", List("acp")))
+      val (named, none) = AcpWriter.launched(AgentCommand("/usr/bin/kiro-cli", List("acp", "--model", "claude-haiku-5.5")))
+      val (other, otherModel) = AcpWriter.launched(AgentCommand("npx", List("-y", "claude-agent-acp")))
+      assertTrue(
+        kiro.args == List("acp", "--agent", AcpWriter.WriteAgent, "--model", "claude-sonnet-5.5"), model.contains("claude-sonnet-5.5"),
+        named.args == List("acp", "--model", "claude-haiku-5.5", "--agent", AcpWriter.WriteAgent), none.isEmpty,
+        other.args == List("-y", "claude-agent-acp"), otherModel.isEmpty)
+    },
+    test("the writer's prompts: the project's agent instructions left out; the last steps' results cut longer than the older ones'") {
+      import com.jamesward.zio_decisions.orchestration.AgentLoop.{Outcome, Step}
+      val context = "Project directory: /p\nFiles (…):\nA.scala" + ProjectContext.InstructionsHeading + "AGENTS.md):\nbe nice" +
+        "\nSource dependencies (…): /q\n\nThe MCP server sbta's instructions (for its tools):\nuse compile"
+      val big = Json.Str("y" * 30000)
+      val steps = (1 to 4).map(n => Step(n, "read_file", Json.Obj("path" -> Json.Str(s"F$n")), Outcome.Succeeded(big))).toVector
+      val prompt = WritingPrompts().argumentsPrompt(ArgumentsRequest("read A", read, steps, context = Some(context)))
+      def kept(n: Int) = prompt.drop(prompt.indexOf(s"$n. read_file")).takeWhile(_ != '…').count(_ == 'y')
+      assertTrue(
+        prompt.contains("A.scala"), !prompt.contains("be nice"), prompt.contains("Source dependencies"), prompt.contains("use compile"),
+        kept(1) <= WritingPrompts.OlderLimit, kept(2) <= WritingPrompts.OlderLimit,
+        kept(3) > WritingPrompts.OlderLimit, kept(3) <= WritingPrompts.RecentLimit, kept(4) > WritingPrompts.OlderLimit)
+    },
     test("the agents of SONESS_ACP_AGENTS") {
       assertTrue(
         Soness.parseAgents("kiro=kiro-cli acp; claude=npx -y @agentclientprotocol/claude-agent-acp ;bad").map((n, c) => (n, c.command, c.args)) ==

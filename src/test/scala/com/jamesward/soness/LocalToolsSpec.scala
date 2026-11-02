@@ -42,6 +42,36 @@ object LocalToolsSpec extends ZIOSpecDefault:
         outside.left.exists(_.getMessage.contains("outside the project")),
       )
     },
+    test("logs and build output, natively: a directory newest or largest first, a log's end, counts, build output by glob or flag") {
+      for
+        root   <- project
+        _      <- ZIO.attemptBlocking:
+                    val logs = Files.createDirectories(root.resolve("target/logs"))
+                    List(("a.log", 3, 30_000L), ("b.log", 50, 10_000L), ("c.log", 7, 20_000L)).foreach: (n, lines, ago) =>
+                      val f = logs.resolve(n)
+                      Files.writeString(f, (1 to lines).map(i => if i % 2 == 0 then s"ERROR $i" else s"INFO $i").mkString("", "\n", "\n"))
+                      Files.setLastModifiedTime(f, java.nio.file.attribute.FileTime.fromMillis(java.lang.System.currentTimeMillis - ago))
+        tools   = LocalTools.toolset(root)
+        newest <- tools.call("list_directory", Json.Obj("path" -> Json.Str("target/logs"), "sort" -> Json.Str("modified")))
+        largest <- tools.call("list_directory", Json.Obj("path" -> Json.Str("target"), "sort" -> Json.Str("size"), "depth" -> Json.Num(3)))
+        tail   <- tools.call("read_file", Json.Obj("path" -> Json.Str("target/logs/b.log"), "tail" -> Json.Num(2)))
+        counts <- tools.call("search_text", Json.Obj("pattern" -> Json.Str("ERROR"), "glob" -> Json.Str("target/logs/*.log"), "count" -> Json.Bool(true)))
+        hidden <- tools.call("list_files", Json.Obj("glob" -> Json.Str("**/*.log")))
+        flagged <- tools.call("list_files", Json.Obj("glob" -> Json.Str("**/*.log"), "include_build_output" -> Json.Bool(true), "sort" -> Json.Str("size")))
+        outside <- tools.call("list_directory", Json.Obj("path" -> Json.Str("../"))).either
+      yield
+        def paths(j: Json, k: String) = j.asObject.flatMap(_.get(k)).flatMap(_.asArray).toList.flatten.flatMap(_.asObject).flatMap(_.get("path")).flatMap(_.asString)
+        assertTrue(
+          // paths as the file tools take them: relative to the project
+          paths(newest, "entries") == List("target/logs/b.log", "target/logs/c.log", "target/logs/a.log"),
+          paths(largest, "entries").head == "target/logs/b.log",
+          str(tail, "text").contains("    49\tINFO 49"), str(tail, "text").contains("    50\tERROR 50"), !str(tail, "text").contains("ERROR 48"),
+          tail.asObject.flatMap(_.get("lines")).contains(Json.Num(50)),
+          counts.asObject.flatMap(_.get("total")).contains(Json.Num(1 + 25 + 3)),
+          !hidden.toString.contains("b.log"), paths(flagged, "files").head == "target/logs/b.log",
+          outside.isLeft,
+        )
+    },
     test("an edit whose lines match but for indentation is made, re-indented; an ambiguous one isn't") {
       val text = "object A:\n  def f =\n    1\n  def g =\n    1\n"
       assertTrue(
@@ -74,9 +104,9 @@ object LocalToolsSpec extends ZIOSpecDefault:
           def call(name: String, arguments: Json.Obj) = ZIO.succeed(Json.Str(name)), source, family)
       val local = LocalTools.toolset(Path.of("/p"))
       val r = ToolResolver.resolve(from(ToolResolver.ToolSource.IntellijMcp, "intellij", "read_file", "apply_patch", "create_new_file",
-          "search_file", "search_text", "execute_terminal_command") ++ from(ToolResolver.ToolSource.ProjectMcp, "sbta", "compile", "check") ++
+          "search_file", "list_directory_tree", "search_text", "execute_terminal_command") ++ from(ToolResolver.ToolSource.ProjectMcp, "sbta", "compile", "check") ++
         ToolResolver.candidates(local, ToolResolver.ToolSource.Local, "local"))
-      assertTrue(local.tools.map(_.name).toSet == Set("read_file", "list_files", "search_text", "edit_file", "write_file", "run_command"),
+      assertTrue(local.tools.map(_.name).toSet == Set("read_file", "list_directory", "list_files", "search_text", "edit_file", "write_file", "run_command"),
         !r.offered.exists(_.source == ToolResolver.ToolSource.Local))
     },
     test("an IDE's edits and listings reach the source dependencies through soness; its reads go to the IDE; file:// URLs are paths") {

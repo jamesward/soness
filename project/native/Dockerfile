@@ -5,8 +5,9 @@ FROM oraclelinux:10-slim
 ARG TARGETARCH
 # GraalVM Community's release and the JDK it is built on (github.com/graalvm/graalvm-ce-builds/releases); the
 # ghcr.io/graalvm/native-image-community image lags the releases by months
-ARG GRAALVM_TAG=graal-25.4.4.1.1
-ARG GRAALVM_JDK=25.0.4.1.1
+ARG GRAALVM_TAG=graal-25.5.5.0.3
+ARG GRAALVM_JDK=25.0.5.0.3
+ARG GRAALVM_RELEASE=25i5
 ARG UPX_VERSION=5.3.0
 
 # what native-image links with: gcc and the static libraries (the latter are in CodeReady Builder, off by default)
@@ -17,7 +18,7 @@ RUN microdnf install -y --enablerepo=ol10_codeready_builder gcc glibc-static zli
 # GraalVM, checked against the SHA-256 its release publishes
 RUN set -eu; \
     case "$TARGETARCH" in amd64) arch=x64 ;; arm64) arch=aarch64 ;; *) echo "unsupported $TARGETARCH" >&2; exit 1 ;; esac; \
-    file="graalvm-community-jdk-25i4-${GRAALVM_JDK}_linux-${arch}_bin.tar.gz"; \
+    file="graalvm-community-jdk-${GRAALVM_RELEASE}-${GRAALVM_JDK}_linux-${arch}_bin.tar.gz"; \
     base="https://github.com/graalvm/graalvm-ce-builds/releases/download/${GRAALVM_TAG}"; \
     curl -fsSL -o "/tmp/$file" "$base/$file"; \
     echo "$(curl -fsSL "$base/$file.sha256")  /tmp/$file" | sha256sum -c -; \

@@ -53,10 +53,10 @@ facts and exceptions.
   container (`project/native/Dockerfile`: GraalVM Community from its release, checked against the release's SHA-256,
   plus UPX, for the host's architecture, so it needs Docker and not a local GraalVM, which NixOS makes hard),
   compressed with UPX unless `-Dnative.upx=false`. It's `project/NativeImage.scala` (an auto plugin; its options are
-  `nativeImageOptions`) and takes about 5 minutes. The Dockerfile's `GRAALVM_TAG` and `GRAALVM_JDK` are the GraalVM
+  `nativeImageOptions`) and takes about 5 minutes. The Dockerfile's `GRAALVM_TAG`, `GRAALVM_JDK` and `GRAALVM_RELEASE` are the GraalVM
   version (the latest release of github.com/graalvm/graalvm-ce-builds; the ghcr.io image lags it by months) and
   `UPX_VERSION` is UPX's: bump them with the other dependencies. Size, measured: GraalVM 25.0.2 gave 99 MiB raw, 25.4
-  75 MiB, and `-Os` 61 MiB (19 MB with UPX `--best`; `--lzma` is 15.7 MB but starts in 1 s; `--future-defaults=all` was
+  75 MiB (25.5 the same), and `-Os` 61 MiB (19 MB with UPX `--best`; `--lzma` is 15.7 MB but starts in 1 s; `--future-defaults=all` was
   larger). The Scala compiler, scalameta, BouncyCastle and the like on the classpath aren't in the image:
   native-image keeps only what is reachable. The subprocess specs (`AcpSubprocess.sonessCommand`: `IntelliJReplaySpec`, `IntellijArms`) launch it instead of the JVM
   when `SONESS_NATIVE` names it (`./sbta shutdown` first: the forked test JVM gets sbt's server's environment); the

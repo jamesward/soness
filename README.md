@@ -42,8 +42,8 @@ target/out/jvm/scala-3.10.0/soness/universal/stage/bin/soness
 Or use a native executable, which needs no JVM: each [release](https://github.com/jamesward/soness/releases) has
 `soness-linux-amd64` and `soness-linux-arm64` (GraalVM native-image, compressed with UPX, with a `.sha256` file each).
 Download one, `chmod +x` it, and configure the client to launch it; it takes the same arguments and environment as
-the script. Starting takes about 0.3 s (UPX unpacks it into memory; the uncompressed executable is 4 times the size
-and starts in 0.1 s: `./sbta -Dnative.upx=false nativeImage`).
+the script. It is about 19 MB and starts in about 0.26 s (UPX unpacks it into memory; the uncompressed executable is
+65 MB and starts in 0.11 s: `./sbta -Dnative.upx=false nativeImage`).
 
 Configure an ACP client to launch that script. For example, in [Zed](https://zed.dev/docs/ai/external-agents):
 

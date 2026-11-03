@@ -24,15 +24,14 @@ object NativeImage extends AutoPlugin {
   override def projectSettings: Seq[Setting[?]] = Seq(
     nativeImageOptions := Seq(
       "--no-fallback",
+      "-Os", // optimize for size: 61 MiB instead of 75 MiB, and the same startup
       "-H:+ReportExceptionStackTraces",
       "--enable-url-protocols=http,https",
-      // SIGTERM and SIGINT run the shutdown hooks, as on the JVM (ZIO's interrupt the main fiber)
-      "--install-exit-handlers",
       // Netty frees its buffers with Java 25's shared arenas; without this its event loop threads die on shutdown
+      // and SIGTERM hangs
       "-H:+SharedArenaSupport",
       // the classpath resources the application reads (native-image embeds only the ones it is told to)
       "-H:IncludeResources=^(tool-catalog|intellij-mcp-tools)\\.json$",
-      "-march=compatibility", // runs on any CPU of the architecture, not only the build machine's generation
     ),
     nativeImage := Def.uncached {
       val log = streams.value.log

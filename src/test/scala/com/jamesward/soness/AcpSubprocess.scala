@@ -15,6 +15,21 @@ object AcpSubprocess:
   def property(name: String): Task[String] =
     System.property(name).someOrFail(IllegalStateException(s"system property $name is not set"))
 
+  /**
+   * The command that starts soness's `Main` with `args`: the JVM on this build's runtime classpath, or the native
+   * executable `SONESS_NATIVE` names (`nativeImage`'s), so the subprocess specs check that too.
+   */
+  def sonessCommand(args: List[String] = Nil, jvmOptions: List[String] = Jvm): Task[(String, List[String])] =
+    System.env("SONESS_NATIVE").map(_.filter(_.nonEmpty)).flatMap:
+      case Some(binary) => ZIO.succeed(binary -> args)
+      case None =>
+        for
+          javaHome  <- property("java.home")
+          classpath <- property("soness.classpath")
+        yield s"$javaHome/bin/java" -> (jvmOptions ++ List("-cp", classpath, "com.jamesward.soness.Main") ++ args)
+
+  private val Jvm = List("--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow")
+
   /** The messages IntelliJ IDEA 2026.2.3 sent soness (`initialize`, `session/new`, `session/prompt`), one per line. */
   val intellijCapture: Task[Chunk[String]] =
     ZStream.fromResource("intellij-idea-2026.2.3.jsonl")
@@ -50,12 +65,10 @@ object AcpSubprocess:
   /** Starts soness, with the command-line `args`, for the life of the scope. */
   def launch(env: Map[String, String], args: List[String] = Nil): ZIO[Scope, Throwable, Peer] =
     for
-      javaHome  <- property("java.home")
-      classpath <- property("soness.classpath")
+      soness    <- sonessCommand(args)
       command    = AgentCommand(
-                     s"$javaHome/bin/java",
-                     List("--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-cp", classpath,
-                       "com.jamesward.soness.Main") ++ args,
+                     soness._1,
+                     soness._2,
                      // the replayed sessions run in this project, whose `.mcp.json` would launch sbta: left out
                      // and the developer's own skills (`~/.agents/skills`) too: a home with none
                      Map("SONESS_PROJECT_MCP" -> "false", "SONESS_USER_HOME" -> "/nonexistent", "SONESS_EVENT_LOG" -> "false",

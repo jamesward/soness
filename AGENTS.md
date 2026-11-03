@@ -49,6 +49,18 @@ facts and exceptions.
 - Commands (CLI fallback form):
   - `./sbta "Test / compile; testFull; stage"` — full validation (what CI runs).
   - `./sbta "testOnly *HarnessSpec"` — a single spec.
+- The native executable (GraalVM native-image; 64-bit Linux, amd64 and arm64): `./sbta nativeImage` builds it in a
+  container (`project/native/Dockerfile`: GraalVM's native-image image plus UPX, for the host's architecture, so it needs
+  Docker and not a local GraalVM, which NixOS makes hard), compressed with UPX unless `-Dnative.upx=false`. It's
+  `project/NativeImage.scala` (an auto plugin; its options are `nativeImageOptions`) and takes about 5 minutes. The
+  subprocess specs (`AcpSubprocess.sonessCommand`: `IntelliJReplaySpec`, `IntellijArms`) launch it instead of the JVM
+  when `SONESS_NATIVE` names it (`./sbta shutdown` first: the forked test JVM gets sbt's server's environment); the
+  release workflow does that on each architecture's runner before it publishes. What native-image needed, if it fails
+  after a dependency change: `-H:+SharedArenaSupport` (Netty frees its buffers with Java 25's shared arenas, and
+  without it its event loops die at shutdown, so SIGTERM hangs), `-H:IncludeResources` for the classpath resources the
+  code reads (`tool-catalog.json`, `intellij-mcp-tools.json`; add any new one), and `--install-exit-handlers`.
+- Releases: pushing a `v*` tag runs `release.yml`: the offline suite, then the native executable on a runner of each
+  architecture (checked with `IntelliJReplaySpec` against it), then a GitHub release with both and their checksums.
 - Smoke test after `stage`: `IntelliJReplaySpec` is the end-to-end check (it launches `Main` against fakes). By hand,
   startup checks each Bedrock model with a chat, so the staged script
   (`target/out/jvm/scala-3.10.0/soness/universal/stage/bin/soness`) needs real Bedrock credentials, or

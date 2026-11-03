@@ -1,0 +1,72 @@
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  # the native executable, built in a container (`./sbta nativeImage`, project/native/Dockerfile) on a runner of the
+  # architecture it is for, and checked by running the ACP replay spec against it before it is released
+  native:
+    needs: test
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-java@v6.1.0
+      with:
+        distribution: 'temurin'
+        java-version: 25
+        cache: 'sbt'
+
+    - run: ./sbta nativeImage
+
+    - id: binary
+      run: |
+        path=$(find target -type f -name soness -path '*/native/*' | head -1)
+        test -n "$path"
+        mkdir -p dist
+        cp "$path" dist/soness-linux-${{ matrix.arch }}
+        (cd dist && sha256sum soness-linux-${{ matrix.arch }} > soness-linux-${{ matrix.arch }}.sha256)
+        echo "path=$PWD/dist/soness-linux-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+
+    # sbt's server must start with the variable: a forked test JVM gets the server's environment
+    - name: Replay IntelliJ IDEA's ACP session against the native executable
+      run: |
+        ./sbta shutdown
+        ./sbta "testOnly com.jamesward.soness.IntelliJReplaySpec"
+      env:
+        SONESS_NATIVE: ${{ steps.binary.outputs.path }}
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: soness-linux-${{ matrix.arch }}
+        path: dist/*
+
+  release:
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        path: dist
+        merge-multiple: true
+
+    - uses: softprops/action-gh-release@v3
+      with:
+        generate_release_notes: true
+        files: dist/*

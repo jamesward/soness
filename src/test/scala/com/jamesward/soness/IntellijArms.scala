@@ -49,15 +49,11 @@ object IntellijArms:
       arm  <- name match
                 case "soness" =>
                   for
-                    javaHome  <- AcpSubprocess.property("java.home")
-                    classpath <- AcpSubprocess.property("soness.classpath")
-                    model     <- System.env("BEDROCK_MODEL_ID").someOrFail(IllegalStateException("BEDROCK_MODEL_ID is not set"))
                     // `SONESS_EVAL_LOG`: a debug log of every run (each turn's lines carry `session=<id>`)
                     log       <- System.env("SONESS_EVAL_LOG")
-                  yield Arm(name, AcpAgentLoop(AgentCommand(s"$javaHome/bin/java",
-                    List("--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-cp", classpath,
-                      "com.jamesward.soness.Main") ++ log.toList.map(_ => "--debug"),
-                    // one model, as configured in IntelliJ
+                    soness    <- AcpSubprocess.sonessCommand(log.toList.map(_ => "--debug"))
+                    model     <- System.env("BEDROCK_MODEL_ID").someOrFail(IllegalStateException("BEDROCK_MODEL_ID is not set"))
+                  yield Arm(name, AcpAgentLoop(AgentCommand(soness._1, soness._2,
                     Map("SONESS_BEDROCK_MODELS" -> "") ++ log.map("SONESS_LOG_FILE" -> _) ++ env), init, timeout), model)
                 case "kiro" =>
                   System.env("SONESS_EVAL_KIRO_MODEL").map(m => Arm(name, AcpAgentLoop(AgentCommand("kiro-cli", List("acp")), init, timeout), m.getOrElse("")))

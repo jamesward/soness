@@ -91,10 +91,17 @@ object IntelliJReplaySpec extends ZIOSpecDefault:
       (_, session) <- peer.awaitResponse(2)
       sessionId  = str(session, "result", "sessionId").getOrElse("")
       _         <- peer.send(prompt.fold(lines(2).replace("${SESSION_ID}", sessionId))(promptRequest(3, sessionId, _)))
-      (updates, prompt) <- peer.awaitResponse(3)
+      (turn, prompt) <- peer.awaitResponse(3)
+      // the session's commands are announced 200 ms after session/new: a turn faster than that (the native
+      // executable's) ends first
+      late      <- if turn.exists(announcesCommands) then ZIO.succeed(Nil) else peer.collect(_.exists(announcesCommands), 3.seconds)
+      updates    = turn ++ late
       logged    <- peer.logged
       sent      <- requests.get
     yield Replay(init, session, updates, prompt, logged, sent, cwd)
+
+  private def announcesCommands(message: Json.Obj): Boolean =
+    str(message, "params", "update", "sessionUpdate").contains("available_commands_update")
 
   private def debugLines(lines: Chunk[String]): Chunk[String] = lines.filter(_.contains("level=DEBUG"))
 
@@ -107,10 +114,9 @@ object IntelliJReplaySpec extends ZIOSpecDefault:
         requests <- Ref.make(Vector.empty[Json.Obj])
         llm      <- bedrock(requests)
         jev      <- FakeJev.serve(JevScript.answer)
-        javaHome <- AcpSubprocess.property("java.home")
-        cp       <- AcpSubprocess.property("soness.classpath")
+        soness   <- AcpSubprocess.sonessCommand(jvmOptions = Nil)
         process  <- ZIO.acquireRelease(ZIO.attemptBlocking:
-                      val b = ProcessBuilder(s"$javaHome/bin/java", "-cp", cp, "com.jamesward.soness.Main")
+                      val b = ProcessBuilder((soness._1 :: soness._2)*)
                       env(llm.encode, jev.encode).foreach((k, v) => b.environment().put(k, v))
                       b.environment().put("SONESS_ACP_AGENTS", "")
                       b.redirectError(ProcessBuilder.Redirect.DISCARD).start()

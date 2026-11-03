@@ -50,6 +50,9 @@ libraryDependencies ++= Seq(
 
 enablePlugins(JavaAppPackaging)
 
+// `nativeImage`: soness as a native executable (`project/NativeImage.scala`), built in a container
+enablePlugins(NativeImage)
+
 Compile / mainClass := Some("com.jamesward.soness.Main")
 
 fork := true
